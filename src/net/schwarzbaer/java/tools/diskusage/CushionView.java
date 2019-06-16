@@ -8,7 +8,6 @@ import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.Vector;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -25,23 +24,53 @@ public class CushionView extends Canvas {
 	private static final long serialVersionUID = -41169096975888890L;
 	
 	interface GuiContext {
-		void expandPathInTree(DiskItem[] diskItems);
+		void expandPathInTree(DiskItem diskItem);
 	}
 	
 	private final GuiContext guiContext;
-	private final Cushion root;
-	private PaintStrategy currentStrategy;
+	private Cushion root;
+	private Layouter currentLayouter;
 	private Painter currentPainter;
+	private Cushion selectedCushion = null;
+	private ContextMenu contextMenu;
 
 	public CushionView(DiskItem root, int width, int height, GuiContext guiContext) {
 		this.guiContext = guiContext;
 		this.root = new Cushion(root);
-		Painter      .Type pt  = Painter      .Type.RectanglePainter;
-		PaintStrategy.Type pst = PaintStrategy.Type.GroupStrategy;
-		currentPainter  = pt .createPainter      .get();
-		currentStrategy = pst.createPaintStrategy.get();
-		currentStrategy.setPainter(currentPainter);
-		addMouseListener(new ContextMenu(pt,pst));
+		Painter .Type pt = Painter .Type.RectanglePainter;
+		Layouter.Type lt = Layouter.Type.GroupLayouter;
+		currentPainter  = pt.createPainter .get();
+		currentLayouter = lt.createLayouter.get();
+		currentLayouter.setPainter(currentPainter);
+		contextMenu = new ContextMenu(pt,lt);
+		addMouseListener(new MyMouseListener());
+	}
+
+	public void setRoot(DiskItem root) {
+		this.root = new Cushion(root);
+		repaint();
+	}
+
+	public void setSelected(DiskItem diskItem) {
+		setSelected(root.find(diskItem));
+	}
+	private void setSelected(Cushion cushion) {
+		if (selectedCushion!=null) selectedCushion.setSelected(false);
+		selectedCushion = cushion;
+		if (selectedCushion!=null) selectedCushion.setSelected(true);
+		repaint();
+	}
+
+	private void setLayouter(Layouter.Type t) {
+		currentLayouter = t.createLayouter.get();
+		currentLayouter.setPainter(currentPainter);
+		repaint();
+	}
+
+	private void setPainter(Painter.Type t) {
+		currentPainter = t.createPainter.get();
+		currentLayouter.setPainter(currentPainter);
+		repaint();
 	}
 
 	@Override
@@ -49,25 +78,31 @@ public class CushionView extends Canvas {
 		currentPainter.paintAll(root,g,x,y,width,height);
 	}
 
-	private void setStrategy(PaintStrategy.Type t) {
-		currentStrategy = t.createPaintStrategy.get();
-		currentStrategy.setPainter(currentPainter);
-		repaint();
-	}
+	private class MyMouseListener implements MouseListener {
 
-	private void setPainter(Painter.Type t) {
-		currentPainter = t.createPainter.get();
-		currentStrategy.setPainter(currentPainter);
-		repaint();
+		@Override public void mousePressed (MouseEvent e) {}
+		@Override public void mouseReleased(MouseEvent e) {}
+		@Override public void mouseEntered (MouseEvent e) {}
+		@Override public void mouseExited  (MouseEvent e) {}
+		@Override public void mouseClicked (MouseEvent e) {
+			
+			if (e.getButton()==MouseEvent.BUTTON3)
+				contextMenu.show(CushionView.this, e.getX(), e.getY());
+			
+			if (e.getButton()==MouseEvent.BUTTON1) {
+				setSelected(root.getCushion(e.getX(), e.getY()));
+				if (selectedCushion!=null) guiContext.expandPathInTree(selectedCushion.diskItem);
+			}
+		}
 	}
 	
-	private class ContextMenu extends JPopupMenu implements MouseListener {
+	private class ContextMenu extends JPopupMenu {
 		private static final long serialVersionUID = 5839108151130675728L;
 		
-		ContextMenu(Painter.Type pt, PaintStrategy.Type pst) {
-			createMenuItems(pst, PaintStrategy.Type.values(), t->t.title, CushionView.this::setStrategy);
+		ContextMenu(Painter.Type pt, Layouter.Type pst) {
+			createMenuItems(pst, Layouter.Type.values(), t->t.title, CushionView.this::setLayouter);
 			addSeparator();
-			createMenuItems(pt , Painter      .Type.values(), t->t.title, CushionView.this::setPainter );
+			createMenuItems(pt , Painter .Type.values(), t->t.title, CushionView.this::setPainter );
 		}
 		private <E extends Enum<E>> void createMenuItems(E selected, E[] values, Function<E,String> getTitle, Consumer<E> set) {
 			ButtonGroup bg = new ButtonGroup();
@@ -80,42 +115,10 @@ public class CushionView extends Canvas {
 			bg.add(comp);
 			return comp;
 		}
-
-		@Override public void mousePressed (MouseEvent e) {}
-		@Override public void mouseReleased(MouseEvent e) {}
-		@Override public void mouseEntered (MouseEvent e) {}
-		@Override public void mouseExited  (MouseEvent e) {}
-		@Override public void mouseClicked (MouseEvent e) {
-			if (e.getButton()==MouseEvent.BUTTON3)
-				show(CushionView.this, e.getX(), e.getY());
-			if (e.getButton()==MouseEvent.BUTTON1) {
-				Cushion[] path = root.getPath(e.getX(), e.getY());
-				//showPath(path);
-				guiContext.expandPathInTree(getDiskItems(path));
-			}
-		}
-
-		@SuppressWarnings("unused")
-		private void showPath(Cushion[] path) {
-			System.out.print("path: ");
-			for (int i=0; i<path.length; i++) {
-				Cushion c = path[i];
-				System.out.print(c.diskItem.name);
-				if (i+1<path.length)
-					System.out.print(" | ");
-				else
-					System.out.println("  [ "+c.diskItem.getSizeStr()+" ]");
-			}
-		}
-
-		private DiskItem[] getDiskItems(Cushion[] path) {
-			return Arrays.asList(path).stream().map(c->c.diskItem).toArray(n->new DiskItem[n]);
-		}
 	}
 
 	private static class Cushion {
 		
-		@SuppressWarnings("unused")
 		private final Cushion parent;
 		private final DiskItem diskItem;
 		private final Cushion[] children;
@@ -125,6 +128,7 @@ public class CushionView extends Canvas {
 		private long sizeOfChildren = 0;
 
 		public Rectangle screenBox = new Rectangle();
+		private boolean isSelected = false;
 
 		public Cushion(DiskItem diskItem) { this(null,diskItem,0); }
 		public Cushion(Cushion parent, DiskItem diskItem, int level) {
@@ -145,29 +149,32 @@ public class CushionView extends Canvas {
 			for (Cushion child:children) child.relativeSize = child.diskItem.size/(double)sizeOfChildren;
 		}
 		
-		public Cushion[] getPath(int x, int y) {
-			Vector<Cushion> path = new Vector<>();
-			getPath(path,x,y);
-			return path.toArray(new Cushion[path.size()]);
+		public void setSelected(boolean isSelected) {
+			this.isSelected = isSelected;
+			if (parent!=null) parent.setSelected(isSelected);
 		}
-		
-		private boolean getPath(Vector<Cushion> path, int x, int y) {
-			if (screenBox.contains(x,y)) {
-				path.add(this);
-				for (Cushion child:children) {
-					boolean hit = child.getPath(path,x,y);
-					if (hit) break;
-				}
-				return true;
+		public Cushion getCushion(int x, int y) {
+			if (!screenBox.contains(x,y)) return null;
+			for (Cushion child:children) {
+				Cushion hit = child.getCushion(x,y);
+				if (hit!=null) return hit;
 			}
-			return false;
+			return this;
+		}
+		public Cushion find(DiskItem diskItem) {
+			if (this.diskItem == diskItem) return this;
+			for (Cushion child:children) {
+				Cushion hit = child.find(diskItem);
+				if (hit!=null) return hit;
+			}
+			return null;
 		}
 	}
 	
 	private static abstract class Painter {
 		
-		protected PaintStrategy paintStrategy = null;
-		public void setPaintStrategy(PaintStrategy paintStrategy) {
+		protected Layouter paintStrategy = null;
+		public void setLayouter(Layouter paintStrategy) {
 			this.paintStrategy = paintStrategy;
 		}
 		public abstract void paintAll(Cushion root, Graphics g, int x, int y, int width, int height);
@@ -187,76 +194,84 @@ public class CushionView extends Canvas {
 		
 		
 		private static class RectanglePainter extends Painter {
-			private static final Color[] defaultColors = new Color[] {
-					Color.RED, Color.GREEN, Color.BLUE
-			};
+			
+			private Color[] colors;
+			private Color selectedLeaf;
+			private Color selectedFolder;
+			
+			RectanglePainter() {
+				this(Color.YELLOW, Color.ORANGE, new Color[] { Color.RED, Color.GREEN, Color.BLUE });
+			}
+			RectanglePainter(Color selectedLeaf, Color selectedFolder, Color[] colors) {
+				this.selectedLeaf   = selectedLeaf;
+				this.selectedFolder = selectedFolder;
+				this.colors = colors;
+			}
 			
 			@Override
-			public void paintCushion(Cushion cushion, Graphics g, int x, int y, int width, int height) {
-				Color color = defaultColors[cushion.level%defaultColors.length];
-				g.setColor(color);
-				g.drawRect(x, y, width-1, height-1);
+			public void paintAll(Cushion root, Graphics g, int x, int y, int width, int height) {
+				paintStrategy.layoutCushion(root,g,x,y,width,height);
 			}
 			@Override
-			public void paintAll(Cushion root, Graphics g, int x, int y, int width, int height) {
-				paintStrategy.paintCushion(root,g,x,y,width,height);
+			public void paintCushion(Cushion cushion, Graphics g, int x, int y, int width, int height) {
+				g.setColor(getColor(cushion));
+				g.drawRect(x, y, width-1, height-1);
+			}
+			protected Color getColor(Cushion cushion) {
+				if (cushion.isSelected) {
+					if (cushion.children.length==0) return selectedLeaf;
+					return selectedFolder;
+				}
+				return colors[cushion.level%colors.length];
 			}
 		}
 		
 		private static class RectanglePainter2 extends RectanglePainter {
-			private static final Color[] defaultColors = new Color[] {
-					Color.ORANGE, Color.DARK_GRAY, Color.PINK
-			};
-		
-			@Override
-			public void paintCushion(Cushion cushion, Graphics g, int x, int y, int width, int height) {
-				Color color = defaultColors[cushion.level%defaultColors.length];
-				g.setColor(color);
-				g.drawRect(x, y, width-1, height-1);
+			RectanglePainter2() {
+				super(Color.GREEN, Color.BLUE, new Color[] { Color.ORANGE, Color.DARK_GRAY, Color.PINK });
 			}
-			
 		}
 	}
 	
-	private static abstract class PaintStrategy {
+	private static abstract class Layouter {
 		private Painter painter = null;
 
 		public void setPainter(Painter painter) {
 			this.painter = painter;
-			this.painter.setPaintStrategy(this);
+			this.painter.setLayouter(this);
 		}
 		
-		public void paintCushion(Cushion cushion, Graphics g, int x, int y, int width, int height) {
+		public void layoutCushion(Cushion cushion, Graphics g, int x, int y, int width, int height) {
 			if (width<=0 || height<=0) { cushion.screenBox.setSize(0,0); return; }
 			cushion.screenBox.setBounds(x,y,width,height);
 			painter.paintCushion(cushion, g, x,y, width,height);
-			paintChildren(cushion.children, g, x+1, y+1, width-2, height-2);
+			layoutChildren(cushion.children, g, x+1, y+1, width-2, height-2);
 		}
-		protected abstract void paintChildren(Cushion[] children, Graphics g, int x, int y, int width, int height);
+		protected abstract void layoutChildren(Cushion[] children, Graphics g, int x, int y, int width, int height);
 		
 		enum Type {
-			GroupStrategy       ("Group Strategy"        ,PaintStrategy.GroupStrategy       ::new),
-			SimpleStripsStrategy("Simple Strips Strategy",PaintStrategy.SimpleStripsStrategy::new),
+			GroupLayouter       ("Group Layouter"        ,Layouter.GroupLayouter       ::new),
+			SimpleStripsLayouter("Simple Strips Layouter",Layouter.SimpleStripsLayouter::new),
 			;
 			private String title;
-			private Supplier<PaintStrategy> createPaintStrategy;
-			private Type(String title, Supplier<PaintStrategy> createPaintStrategy) {
+			private Supplier<Layouter> createLayouter;
+			private Type(String title, Supplier<Layouter> createLayouter) {
 				this.title = title;
-				this.createPaintStrategy = createPaintStrategy;
+				this.createLayouter = createLayouter;
 			}
 		}
 		
 		
-		private static class GroupStrategy extends PaintStrategy {
+		private static class GroupLayouter extends Layouter {
 			private static final double MAX_RATIO = 3.0; // 1/X < w/h < X
 		
 			@Override
-			protected void paintChildren(Cushion[] children, Graphics g, int x, int y, int width, int height) {
+			protected void layoutChildren(Cushion[] children, Graphics g, int x, int y, int width, int height) {
 				if (width<=0 || height<=0) return;
-				paintChildrenGroup(children, 0, children.length, 1.0, g, x,y, width,height);
+				layoutChildrenGroup(children, 0, children.length, 1.0, g, x,y, width,height);
 			}
 		
-			private void paintChildrenGroup(Cushion[] children, int beginIndex, int endIndex, double relGroupSize, Graphics g, int x, int y, int width, int height) {
+			private void layoutChildrenGroup(Cushion[] children, int beginIndex, int endIndex, double relGroupSize, Graphics g, int x, int y, int width, int height) {
 				while (true) {
 					if (relGroupSize<=0) return;
 					if (width<=0 || height<=0) return;
@@ -272,11 +287,11 @@ public class CushionView extends Canvas {
 						// firstBlock uses full width
 						int blockWidth = (int)Math.round( children[beginIndex].relativeSize/relGroupSize*length );
 						if (horizontal) {
-							paintCushion(children[beginIndex], g, x,y, blockWidth,height);
+							layoutCushion(children[beginIndex], g, x,y, blockWidth,height);
 							x += blockWidth;
 							width -= blockWidth;
 						} else {
-							paintCushion(children[beginIndex], g, x,y, width,blockWidth);
+							layoutCushion(children[beginIndex], g, x,y, width,blockWidth);
 							y += blockWidth;
 							height -= blockWidth;
 						}
@@ -290,14 +305,13 @@ public class CushionView extends Canvas {
 					for (int i=beginIndex; i<endIndex-1; i++) {
 						relRowSize += children[i].relativeSize;
 						int blockWidth = (int)Math.round( relRowSize/relGroupSize*length );
-						// TODO: take remaining children into account
-						if ((blockWidth>0 && breadth/blockWidth < (i+1-beginIndex))) {
+						if (1 <= (i+1-beginIndex)*blockWidth / breadth) {
 							if (horizontal) {
-								paintChildrenGroup(children, beginIndex,i+1, relRowSize, g, x,y, blockWidth,height);
+								layoutChildrenGroup(children, beginIndex,i+1, relRowSize, g, x,y, blockWidth,height);
 								x += blockWidth;
 								width -= blockWidth;
 							} else {
-								paintChildrenGroup(children, beginIndex,i+1, relRowSize, g, x,y, width,blockWidth);
+								layoutChildrenGroup(children, beginIndex,i+1, relRowSize, g, x,y, width,blockWidth);
 								y += blockWidth;
 								height -= blockWidth;
 							}
@@ -309,13 +323,13 @@ public class CushionView extends Canvas {
 					}
 					
 					if (writeCompleteRow) {
-						paintChildrenGroupAsSimpleStrips(children, beginIndex, endIndex, relGroupSize, g, x, y, horizontal, length, breadth);
+						layoutChildrenGroupAsSimpleStrips(children, beginIndex, endIndex, relGroupSize, g, x, y, horizontal, length, breadth);
 						return;
 					}
 				}
 			}
 		
-			private void paintChildrenGroupAsSimpleStrips(Cushion[] children, int beginIndex, int endIndex, double relGroupSize, Graphics g, int x, int y, boolean horizontal, int length, int breadth) {
+			private void layoutChildrenGroupAsSimpleStrips(Cushion[] children, int beginIndex, int endIndex, double relGroupSize, Graphics g, int x, int y, boolean horizontal, int length, int breadth) {
 				int screenPos = horizontal?x:y;
 				double pos = screenPos;
 				for (int i=beginIndex; i<endIndex; i++) {
@@ -323,17 +337,18 @@ public class CushionView extends Canvas {
 					pos += child.relativeSize/relGroupSize*length;
 					int w = (int)Math.round(pos-screenPos);
 					if (horizontal)
-						paintCushion(child, g, screenPos,y, w,breadth);
+						layoutCushion(child, g, screenPos,y, w,breadth);
 					else
-						paintCushion(child, g, x,screenPos, breadth,w);
+						layoutCushion(child, g, x,screenPos, breadth,w);
 					screenPos += w;
 				}
 			}
 		}
-		private static class SimpleStripsStrategy extends PaintStrategy {
+		
+		private static class SimpleStripsLayouter extends Layouter {
 		
 			@Override
-			protected void paintChildren(Cushion[] children, Graphics g, int x, int y, int width, int height) {
+			protected void layoutChildren(Cushion[] children, Graphics g, int x, int y, int width, int height) {
 				if (width<=0 || height<=0) return;
 				boolean horizontal = width>height;
 				int length = horizontal?width:height;
@@ -343,9 +358,9 @@ public class CushionView extends Canvas {
 					pos += child.relativeSize*length;
 					int w = (int)Math.round(pos-screenPos);
 					if (horizontal)
-						paintCushion(child, g, screenPos,y, w,height);
+						layoutCushion(child, g, screenPos,y, w,height);
 					else
-						paintCushion(child, g, x,screenPos, width,w);
+						layoutCushion(child, g, x,screenPos, width,w);
 					screenPos += w;
 				}
 			}

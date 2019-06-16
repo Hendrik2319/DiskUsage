@@ -44,6 +44,16 @@ public class DiskUsage implements CushionView.GuiContext {
 	private void createGUI() {
 		rootTreeNode = new DiskItemTreeNode(root);
 		treeView = new JTree(rootTreeNode);
+		treeView.addTreeSelectionListener(e -> {
+			TreePath treePath = treeView.getSelectionPath();
+			if (treePath==null) return;
+			Object object = treePath.getLastPathComponent();
+			if (object instanceof DiskItemTreeNode) {
+				DiskItemTreeNode treeNode = (DiskItemTreeNode) object;
+				cushionView.setSelected(treeNode.diskItem);
+			}
+		});
+		
 		cushionView = new CushionView(root,1000,800,this);
 		cushionView.setBorder(BorderFactory.createTitledBorder("Cushion View"));
 		cushionView.setPreferredSize(new Dimension(1000,800));
@@ -62,8 +72,10 @@ public class DiskUsage implements CushionView.GuiContext {
 	}
 
 	@Override
-	public void expandPathInTree(DiskItem[] diskItems) {
-		TreePath treePath = rootTreeNode.getPath(diskItems);
+	public void expandPathInTree(DiskItem diskItems) {
+		DiskItemTreeNode node = rootTreeNode.find(diskItems);
+		if (node==null) return;
+		TreePath treePath = node.getPath();
 		//System.out.println(treePath);
 		treeView.setSelectionPath(treePath);
 		treeView.scrollPathToVisible(treePath);
@@ -103,21 +115,23 @@ public class DiskUsage implements CushionView.GuiContext {
 			this.diskItem = diskItem;
 		}
 
-		public TreePath getPath(DiskItem[] diskItems) {
-			if (diskItems==null || diskItems.length==0) return null;
-			
+		public DiskItemTreeNode find(DiskItem diskItem) {
+			if (this.diskItem == diskItem)
+				return this;
+			if (children==null) createChildren();
+			for (DiskItemTreeNode child:children) {
+				DiskItemTreeNode hit = child.find(diskItem);
+				if (hit!=null) return hit;
+			}
+			return null;
+		}
+		public TreePath getPath() {
 			Vector<DiskItemTreeNode> path = new Vector<>();
-			if (diskItem==diskItems[0]) {
-				path.add(this);
-				DiskItemTreeNode node = this;
-				for (int i=1; i<diskItems.length; i++) {
-					if (node.children==null) node.createChildren();
-					for (DiskItemTreeNode child:node.children)
-						if (child.diskItem==diskItems[i]) {
-							path.add(node = child);
-							break;
-						}
-				}
+			path.add(this);
+			DiskItemTreeNode node = this;
+			while (node.parent!=null) {
+				path.insertElementAt(node.parent, 0);
+				node = node.parent;
 			}
 			return new TreePath( path.toArray(new DiskItemTreeNode[path.size()]) );
 		}
@@ -155,12 +169,14 @@ public class DiskUsage implements CushionView.GuiContext {
 
 	static class DiskItem {
 
-		String name; 
+		final DiskItem parent;
+		final String name; 
 		long size;
 		Vector<DiskItem> children;
 
-		public DiskItem() { this("<root>"); }
-		private DiskItem(String name) {
+		public DiskItem() { this(null,"<root>"); }
+		private DiskItem(DiskItem parent, String name) {
+			this.parent = parent;
 			this.name = name;
 			size = 0;
 			children = new Vector<>();
@@ -195,9 +211,8 @@ public class DiskUsage implements CushionView.GuiContext {
 					break;
 				}
 			if (child == null)
-				children.add(child = new DiskItem(path[i]));
+				children.add(child = new DiskItem(this,path[i]));
 			return child.getChild(path, i+1);
 		}
-		
 	}
 }
