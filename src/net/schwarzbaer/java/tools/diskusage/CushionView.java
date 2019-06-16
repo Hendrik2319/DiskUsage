@@ -28,18 +28,31 @@ public class CushionView extends Canvas {
 	private final GuiContext guiContext;
 	private final Cushion root;
 	private AbstractPaintStrategy currentStrategy;
-	private RectanglePainter currentPainter;
+	private AbstractPainter currentPainter;
 
 	public CushionView(DiskItem root, int width, int height, GuiContext guiContext) {
 		this.guiContext = guiContext;
 		this.root = new Cushion(root);
 		currentPainter = new RectanglePainter();
-		currentStrategy = new GroupStrategy(currentPainter);
+		currentStrategy = new GroupStrategy();
+		currentStrategy.setPainter(currentPainter);
 		addMouseListener(new ContextMenu());
+	}
+
+	@Override
+	protected void paintCanvas(Graphics g, int x, int y, int width, int height) {
+		currentPainter.paintAll(root,g,x,y,width,height);
 	}
 
 	private void setStrategy(AbstractPaintStrategy strategy) {
 		currentStrategy = strategy;
+		currentStrategy.setPainter(currentPainter);
+		repaint();
+	}
+
+	private void setPainter(AbstractPainter painter) {
+		currentPainter = painter;
+		currentStrategy.setPainter(currentPainter);
 		repaint();
 	}
 	
@@ -48,8 +61,11 @@ public class CushionView extends Canvas {
 		
 		ContextMenu() {
 			ButtonGroup bg = new ButtonGroup();
-			add(createMenuItem("Simple Strips Strategy",false,bg,e->setStrategy(new SimpleStripsStrategy(currentPainter))));
-			add(createMenuItem("Group Strategy"        ,true ,bg,e->setStrategy(new GroupStrategy       (currentPainter))));
+			add(createMenuItem("Simple Strips Strategy",false,bg,e->setStrategy(new SimpleStripsStrategy())));
+			add(createMenuItem("Group Strategy"        ,true ,bg,e->setStrategy(new GroupStrategy())));
+			addSeparator();
+			add(createMenuItem("Rectangle Painter"  ,false,bg,e->setPainter(new RectanglePainter ())));
+			add(createMenuItem("Rectangle Painter 2",true ,bg,e->setPainter(new RectanglePainter2())));
 		}
 
 		private JMenuItem createMenuItem(String title, boolean isSelected, ButtonGroup bg, ActionListener al) {
@@ -89,11 +105,6 @@ public class CushionView extends Canvas {
 		private DiskItem[] getDiskItems(Cushion[] path) {
 			return Arrays.asList(path).stream().map(c->c.diskItem).toArray(n->new DiskItem[n]);
 		}
-	}
-
-	@Override
-	protected void paintCanvas(Graphics g, int x, int y, int width, int height) {
-		currentStrategy.paintCushion(root,g,x,y,width,height);
 	}
 
 	private static class Cushion {
@@ -151,6 +162,12 @@ public class CushionView extends Canvas {
 	}
 	
 	private static abstract class AbstractPainter {
+		
+		protected AbstractPaintStrategy paintStrategy = null;
+		public void setPaintStrategy(AbstractPaintStrategy paintStrategy) {
+			this.paintStrategy = paintStrategy;
+		}
+		public abstract void paintAll(Cushion root, Graphics g, int x, int y, int width, int height);
 		public abstract void paintCushion(Cushion cushion, Graphics g, int x, int y, int width, int height);
 	}
 	
@@ -160,12 +177,21 @@ public class CushionView extends Canvas {
 			g.setColor(cushion.color);
 			g.drawRect(x, y, width-1, height-1);
 		}
+		@Override
+		public void paintAll(Cushion root, Graphics g, int x, int y, int width, int height) {
+			paintStrategy.paintCushion(root,g,x,y,width,height);
+		}
+	}
+	
+	private static class RectanglePainter2 extends RectanglePainter {
 	}
 	
 	private static abstract class AbstractPaintStrategy {
-		private AbstractPainter painter;
-		protected AbstractPaintStrategy(AbstractPainter painter) {
+		private AbstractPainter painter = null;
+
+		public void setPainter(AbstractPainter painter) {
 			this.painter = painter;
+			this.painter.setPaintStrategy(this);
 		}
 		
 		public void paintCushion(Cushion cushion, Graphics g, int x, int y, int width, int height) {
@@ -179,8 +205,6 @@ public class CushionView extends Canvas {
 	
 	private static class GroupStrategy extends AbstractPaintStrategy {
 		private static final double MAX_RATIO = 3.0; // 1/X < w/h < X
-
-		protected GroupStrategy(AbstractPainter painter) { super(painter); }
 
 		@Override
 		protected void paintChildren(Cushion[] children, Graphics g, int x, int y, int width, int height) {
@@ -250,7 +274,6 @@ public class CushionView extends Canvas {
 	}
 	
 	private static class SimpleStripsStrategy extends AbstractPaintStrategy {
-		protected SimpleStripsStrategy(AbstractPainter painter) { super(painter); }
 
 		@Override
 		protected void paintChildren(Cushion[] children, Graphics g, int x, int y, int width, int height) {
