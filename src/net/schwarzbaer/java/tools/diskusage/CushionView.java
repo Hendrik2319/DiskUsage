@@ -209,55 +209,78 @@ public class CushionView extends Canvas {
 		@Override
 		protected void paintChildren(Cushion[] children, Graphics g, int x, int y, int width, int height) {
 			if (width<=0 || height<=0) return;
-			drawChildrenGroup(children, 0, children.length, 1.0, g, x,y, width,height);
+			paintChildrenGroup(children, 0, children.length, 1.0, g, x,y, width,height);
 		}
 
-		private void drawChildrenGroup(Cushion[] children, int beginIndex, int endIndex, double relGroupSize, Graphics g, int x, int y, int width, int height) {
-			if (width<=0 || height<=0) return;
-			endIndex = Math.min(endIndex, children.length);
-			if (beginIndex>=endIndex) return;
-			
-			boolean horizontal = width>height;
-			int length = horizontal?width:height;
-			int breadth = horizontal?height:width;
-			
-			double firstBlockAspectRatio = breadth / (children[beginIndex].relativeSize/relGroupSize*length);
-			if (firstBlockAspectRatio<MAX_RATIO) {
-				// firstBlock uses full width
-				int blockWidth = (int)Math.round( children[beginIndex].relativeSize/relGroupSize*length );
-				if (horizontal) {
-					paintCushion(children[beginIndex], g, x,y, blockWidth,breadth);
-					drawChildrenGroup(children, beginIndex+1, endIndex, relGroupSize-children[beginIndex].relativeSize, g, x+blockWidth,y, length-blockWidth, breadth);
-				} else {
-					paintCushion(children[beginIndex], g, x,y, breadth,blockWidth);
-					drawChildrenGroup(children, beginIndex+1, endIndex, relGroupSize-children[beginIndex].relativeSize, g, x,y+blockWidth, breadth, length-blockWidth);
-				}
-				return;
-			}
-			
-			double relRowSize = 0.0;
-			for (int i=beginIndex; i<endIndex; i++) {
-				Cushion child = children[i];
-				relRowSize += child.relativeSize;
-				int blockWidth = (int)Math.round( relRowSize/relGroupSize*length );
-				if ((blockWidth>0 && breadth/blockWidth < (i+1-beginIndex)) || i+1>=endIndex) {
-					paintChildrenGroupAsSimpleStrips(children, beginIndex, i+1, relRowSize, g, x, y, !horizontal, breadth, blockWidth);
+		private void paintChildrenGroup(Cushion[] children, int beginIndex, int endIndex, double relGroupSize, Graphics g, int x, int y, int width, int height) {
+			while (true) {
+				if (relGroupSize<=0) return;
+				if (width<=0 || height<=0) return;
+				endIndex = Math.min(endIndex, children.length);
+				if (beginIndex>=endIndex) return;
+				
+				boolean horizontal = width>height;
+				int length = horizontal?width:height;
+				int breadth = horizontal?height:width;
+				
+				double firstBlockAspectRatio = breadth / (children[beginIndex].relativeSize/relGroupSize*length);
+				if (firstBlockAspectRatio<MAX_RATIO || beginIndex+1==endIndex) {
+					// firstBlock uses full width
+					int blockWidth = (int)Math.round( children[beginIndex].relativeSize/relGroupSize*length );
 					if (horizontal) {
-						drawChildrenGroup(children, i+1, endIndex, relGroupSize-relRowSize, g, x+blockWidth,y, length-blockWidth, breadth);
+						paintCushion(children[beginIndex], g, x,y, blockWidth,height);
+						x += blockWidth;
+						width -= blockWidth;
+						//paintChildrenGroup(children, beginIndex, endIndex, relGroupSize, g, x, y, width, height)
+						//paintChildrenGroup(children, beginIndex+1, endIndex, relGroupSize-children[beginIndex].relativeSize, g, x+blockWidth,y, length-blockWidth, breadth);
 					} else {
-						drawChildrenGroup(children, i+1, endIndex, relGroupSize-relRowSize, g, x,y+blockWidth, breadth, length-blockWidth);
+						paintCushion(children[beginIndex], g, x,y, width,blockWidth);
+						y += blockWidth;
+						height -= blockWidth;
+						//paintChildrenGroup(children, beginIndex, endIndex, relGroupSize, g, x, y, width, height)
+						//paintChildrenGroup(children, beginIndex+1, endIndex, relGroupSize-children[beginIndex].relativeSize, g, x,y+blockWidth, breadth, length-blockWidth);
 					}
+					relGroupSize -= children[beginIndex].relativeSize;
+					beginIndex++;
+					continue;
+				}
+				
+				boolean writeCompleteRow = true;
+				double relRowSize = 0.0;
+				for (int i=beginIndex; i<endIndex-1; i++) {
+					relRowSize += children[i].relativeSize;
+					int blockWidth = (int)Math.round( relRowSize/relGroupSize*length );
+					if ((blockWidth>0 && breadth/blockWidth < (i+1-beginIndex))) {
+						//paintChildrenGroupAsSimpleStrips(children, beginIndex, i+1, relRowSize, g, x, y, !horizontal, breadth, blockWidth);
+						if (horizontal) {
+							paintChildrenGroup(children, beginIndex,i+1, relRowSize, g, x,y, blockWidth,height);
+							//paintChildrenGroup(children, i+1, endIndex, relGroupSize-relRowSize, g, x+blockWidth,y, length-blockWidth, breadth);
+							x += blockWidth;
+							width  -= blockWidth;
+							//paintChildrenGroup(children, beginIndex, endIndex, relGroupSize, g, x, y, width, height)
+						} else {
+							paintChildrenGroup(children, beginIndex,i+1, relRowSize, g, x,y, width,blockWidth);
+							//paintChildrenGroup(children, i+1, endIndex, relGroupSize-relRowSize, g, x,y+blockWidth, breadth, length-blockWidth);
+							y += blockWidth;
+							height -= blockWidth;
+							//paintChildrenGroup(children, beginIndex, endIndex, relGroupSize, g, x, y, width, height)
+						}
+						//return;
+						relGroupSize -= relRowSize;
+						beginIndex = i+1;
+						writeCompleteRow = false;
+						break;
+					}
+				}
+				
+				if (writeCompleteRow) {
+					paintChildrenGroupAsSimpleStrips(children, beginIndex, endIndex, relGroupSize, g, x, y, horizontal, length, breadth);
 					return;
 				}
 			}
-			
-			System.out.println("#####################################################################");
-			// simple stripes
-			paintChildrenGroupAsSimpleStrips(children, beginIndex, endIndex, relGroupSize, g, x, y, horizontal, length, breadth);
 		}
 
-		private void paintChildrenGroupAsSimpleStrips(Cushion[] children, int beginIndex, int endIndex, double relGroupSize, Graphics g, int x,
-				int y, boolean horizontal, int length, int breadth) {
+		private void paintChildrenGroupAsSimpleStrips(Cushion[] children, int beginIndex, int endIndex, double relGroupSize, Graphics g, int x, int y, boolean horizontal, int length, int breadth) {
 			int screenPos = horizontal?x:y;
 			double pos = screenPos;
 			for (int i=beginIndex; i<endIndex; i++) {
