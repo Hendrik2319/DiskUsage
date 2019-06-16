@@ -9,6 +9,8 @@ import java.awt.event.MouseListener;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Vector;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import javax.swing.ButtonGroup;
@@ -63,19 +65,15 @@ public class CushionView extends Canvas {
 		private static final long serialVersionUID = 5839108151130675728L;
 		
 		ContextMenu(Painter.Type pt, PaintStrategy.Type pst) {
-			ButtonGroup bgStrategy = new ButtonGroup();
-			for (PaintStrategy.Type t:PaintStrategy.Type.values())
-				add(createMenuItem(t.title,t==pst,bgStrategy,e->setStrategy(t)));
-//			add(createMenuItem("Group Strategy"        ,true ,bgStrategy,e->setStrategy(new PaintStrategy.GroupStrategy())));
-//			add(createMenuItem("Simple Strips Strategy",false,bgStrategy,e->setStrategy(new PaintStrategy.SimpleStripsStrategy())));
+			createMenuItems(pst, PaintStrategy.Type.values(), t->t.title, CushionView.this::setStrategy);
 			addSeparator();
-			ButtonGroup bgPainter = new ButtonGroup();
-			for (Painter.Type t:Painter.Type.values())
-				add(createMenuItem(t.title,t==pt,bgPainter,e->setPainter(t)));
-//			add(createMenuItem("Rectangle Painter"  ,true ,bgPainter,e->setPainter(new Painter.RectanglePainter ())));
-//			add(createMenuItem("Rectangle Painter 2",false,bgPainter,e->setPainter(new Painter.RectanglePainter2())));
+			createMenuItems(pt , Painter      .Type.values(), t->t.title, CushionView.this::setPainter );
 		}
-
+		private <E extends Enum<E>> void createMenuItems(E selected, E[] values, Function<E,String> getTitle, Consumer<E> set) {
+			ButtonGroup bg = new ButtonGroup();
+			for (E t:values)
+				add(createMenuItem(getTitle.apply(t),t==selected,bg,e->set.accept(t)));
+		}
 		private JMenuItem createMenuItem(String title, boolean isSelected, ButtonGroup bg, ActionListener al) {
 			JCheckBoxMenuItem comp = new JCheckBoxMenuItem(title,isSelected);
 			comp.addActionListener(al);
