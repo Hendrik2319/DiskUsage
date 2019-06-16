@@ -22,10 +22,11 @@ import javax.swing.JTree;
 import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
 import javax.swing.tree.TreeNode;
+import javax.swing.tree.TreePath;
 
 import net.schwarzbaer.gui.StandardMainWindow;
 
-public class DiskUsage {
+public class DiskUsage implements CushionView.GuiContext {
 
 	public static void main(String[] args) {
 		try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
@@ -36,12 +37,14 @@ public class DiskUsage {
 	}
 	
 	private DiskItem root;
+	private DiskItemTreeNode rootTreeNode;
 	private JTree treeView;
 	private CushionView cushionView;
 
 	private void createGUI() {
-		treeView = new JTree(new DiskItemTreeNode(root));
-		cushionView = new CushionView(root,1000,800);
+		rootTreeNode = new DiskItemTreeNode(root);
+		treeView = new JTree(rootTreeNode);
+		cushionView = new CushionView(root,1000,800,this);
 		cushionView.setBorder(BorderFactory.createTitledBorder("Cushion View"));
 		cushionView.setPreferredSize(new Dimension(1000,800));
 		
@@ -58,7 +61,13 @@ public class DiskUsage {
 		mainWindow.startGUI(contentPane);
 	}
 
-
+	@Override
+	public void expandPathInTree(DiskItem[] diskItems) {
+		TreePath treePath = rootTreeNode.getPath(diskItems);
+		//System.out.println(treePath);
+		treeView.setSelectionPath(treePath);
+		treeView.scrollPathToVisible(treePath);
+	}
 
 	private DiskUsage readFile(File file) {
 		root = null;
@@ -94,6 +103,25 @@ public class DiskUsage {
 			this.diskItem = diskItem;
 		}
 
+		public TreePath getPath(DiskItem[] diskItems) {
+			if (diskItems==null || diskItems.length==0) return null;
+			
+			Vector<DiskItemTreeNode> path = new Vector<>();
+			if (diskItem==diskItems[0]) {
+				path.add(this);
+				DiskItemTreeNode node = this;
+				for (int i=1; i<diskItems.length; i++) {
+					if (node.children==null) node.createChildren();
+					for (DiskItemTreeNode child:node.children)
+						if (child.diskItem==diskItems[i]) {
+							path.add(node = child);
+							break;
+						}
+				}
+			}
+			return new TreePath( path.toArray(new DiskItemTreeNode[path.size()]) );
+		}
+		
 		private void createChildren() {
 			children = diskItem.children.stream()
 					.map(di->new DiskItemTreeNode(this,di))
@@ -142,10 +170,10 @@ public class DiskUsage {
 		public String toString() {
 			//return name + " (" + size + "kB)";
 			//return String.format(Locale.GERMAN, "[ %,d kB ]   %s", toString(size), name);
-			return String.format("[ %s ]   %s", toString(size), name);
+			return String.format("[ %s ]   %s", getSizeStr(), name);
 		}
 		
-		private String toString(long size) {
+		public String getSizeStr() {
 			if (size<1024) return size+" kB";
 			double sizeD;
 			sizeD = size/1024.0; if (sizeD<1024) return String.format(Locale.ENGLISH, "%1.2f MB", sizeD);
