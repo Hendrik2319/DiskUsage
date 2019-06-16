@@ -73,7 +73,7 @@ public class CushionView extends Canvas {
 		private final Cushion[] children;
 		private final Color color;
 
-		private double partOfParent = 1.0;
+		private double relativeSize = 1.0;
 		private long sizeOfChildren = 0;
 
 		public Cushion(DiskItem diskItem) { this(diskItem,0); }
@@ -91,7 +91,7 @@ public class CushionView extends Canvas {
 			
 			sizeOfChildren = 0;
 			for (Cushion child:children) sizeOfChildren += child.diskItem.size;
-			for (Cushion child:children) child.partOfParent = child.diskItem.size/(double)sizeOfChildren;
+			for (Cushion child:children) child.relativeSize = child.diskItem.size/(double)sizeOfChildren;
 		}
 	}
 	
@@ -112,44 +112,50 @@ public class CushionView extends Canvas {
 		@Override
 		protected void drawChildren(Cushion[] children, Graphics g, int x, int y, int width, int height) {
 			if (width<=0 || height<=0) return;
-			drawChildrenGroup(children, 0, 1.0, g, x,y, width,height);
+			drawChildrenGroup(children, 0, children.length, 1.0, g, x,y, width,height);
 		}
 
-		private void drawChildrenGroup(Cushion[] children, int offset, double remaining, Graphics g, int x, int y, int width, int height) {
+		private void drawChildrenGroup(Cushion[] children, int beginIndex, int endIndex, double relGroupSize, Graphics g, int x, int y, int width, int height) {
 			if (width<=0 || height<=0) return;
-			if (offset>=children.length) return;
+			endIndex = Math.min(endIndex, children.length);
+			if (beginIndex>=endIndex) return;
 			
 			boolean horizontal = width>height;
 			int length = horizontal?width:height;
 			int breadth = horizontal?height:width;
 			
-			double firstBlock = breadth / (children[offset].partOfParent/remaining*length);
+			double firstBlock = breadth / (children[beginIndex].relativeSize/relGroupSize*length);
 			if (firstBlock<MAX_RATIO) {
 				// firstBlock uses full width
-				int blockWidth = (int)Math.round( children[offset].partOfParent/remaining*length );
+				int blockWidth = (int)Math.round( children[beginIndex].relativeSize/relGroupSize*length );
 				if (horizontal) {
-					draw(children[offset], g, x,y, blockWidth,height);
-					drawChildrenGroup(children, offset+1, remaining-children[offset].partOfParent, g, x+blockWidth,y, width-blockWidth, height);
+					draw(children[beginIndex], g, x,y, blockWidth,breadth);
+					drawChildrenGroup(children, beginIndex+1, endIndex, relGroupSize-children[beginIndex].relativeSize, g, x+blockWidth,y, length-blockWidth, breadth);
 				} else {
-					draw(children[offset], g, x,y, width,blockWidth);
-					drawChildrenGroup(children, offset+1, remaining-children[offset].partOfParent, g, x,y+blockWidth, width, height-blockWidth);
+					draw(children[beginIndex], g, x,y, breadth,blockWidth);
+					drawChildrenGroup(children, beginIndex+1, endIndex, relGroupSize-children[beginIndex].relativeSize, g, x,y+blockWidth, breadth, length-blockWidth);
 				}
 				return;
 			}
 			
-			// TODO Auto-generated method stub
+			// TODO: build first row
 			
 			// simple stripes
+			drawChildrenGroupAsSimpleStrips(children, beginIndex, endIndex, relGroupSize, g, x, y, horizontal, length, breadth);
+		}
+
+		private void drawChildrenGroupAsSimpleStrips(Cushion[] children, int beginIndex, int endIndex, double relGroupSize, Graphics g, int x,
+				int y, boolean horizontal, int length, int breadth) {
 			int screenPos = horizontal?x:y;
 			double pos = screenPos;
-			for (int i=offset; i<children.length; i++) {
+			for (int i=beginIndex; i<endIndex; i++) {
 				Cushion child = children[i];
-				pos += child.partOfParent/remaining*length;
+				pos += child.relativeSize/relGroupSize*length;
 				int w = (int)Math.round(pos-screenPos);
 				if (horizontal)
-					draw(child, g, screenPos,y, w,height);
+					draw(child, g, screenPos,y, w,breadth);
 				else
-					draw(child, g, x,screenPos, width,w);
+					draw(child, g, x,screenPos, breadth,w);
 				screenPos += w;
 			}
 		}
@@ -164,7 +170,7 @@ public class CushionView extends Canvas {
 			int screenPos = horizontal?x:y;
 			double pos = screenPos;
 			for (Cushion child:children) {
-				pos += child.partOfParent*length;
+				pos += child.relativeSize*length;
 				int w = (int)Math.round(pos-screenPos);
 				if (horizontal)
 					draw(child, g, screenPos,y, w,height);
