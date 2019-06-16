@@ -2,6 +2,7 @@ package net.schwarzbaer.java.tools.diskusage;
 
 import java.awt.Color;
 import java.awt.Graphics;
+import java.awt.Rectangle;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
@@ -56,6 +57,9 @@ public class CushionView extends Canvas {
 		@Override public void mouseClicked (MouseEvent e) {
 			if (e.getButton()==MouseEvent.BUTTON3)
 				show(CushionView.this, e.getX(), e.getY());
+			if (e.getButton()==MouseEvent.BUTTON1) {
+				//root.getPath
+			}
 		}
 	}
 
@@ -69,6 +73,8 @@ public class CushionView extends Canvas {
 				Color.BLUE, Color.GREEN, Color.RED
 		};
 		
+		@SuppressWarnings("unused")
+		private final Cushion parent;
 		private final DiskItem diskItem;
 		private final Cushion[] children;
 		private final Color color;
@@ -76,13 +82,16 @@ public class CushionView extends Canvas {
 		private double relativeSize = 1.0;
 		private long sizeOfChildren = 0;
 
-		public Cushion(DiskItem diskItem) { this(diskItem,0); }
-		public Cushion(DiskItem diskItem, int level) {
+		public Rectangle screenBox = new Rectangle();
+
+		public Cushion(DiskItem diskItem) { this(null,diskItem,0); }
+		public Cushion(Cushion parent, DiskItem diskItem, int level) {
+			this.parent = parent;
 			this.diskItem = diskItem;
 			this.color = defaultColors[level%defaultColors.length];
 			this.children = diskItem.children.stream()
 					.filter(di->di.size>0)
-					.map(di->new Cushion(di,level+1))
+					.map(di->new Cushion(this,di,level+1))
 					.toArray(n->new Cushion[n]);
 			Arrays.sort(
 					children,
@@ -101,6 +110,7 @@ public class CushionView extends Canvas {
 			if (width<=0 || height<=0) return;
 			g.setColor(cushion.color);
 			g.drawRect(x, y, width-1, height-1);
+			cushion.screenBox.setBounds(x,y,width,height);
 			drawChildren(cushion.children, g, x+1, y+1, width-2, height-2);
 		}
 		protected abstract void drawChildren(Cushion[] children, Graphics g, int x, int y, int width, int height);
@@ -124,8 +134,8 @@ public class CushionView extends Canvas {
 			int length = horizontal?width:height;
 			int breadth = horizontal?height:width;
 			
-			double firstBlock = breadth / (children[beginIndex].relativeSize/relGroupSize*length);
-			if (firstBlock<MAX_RATIO) {
+			double firstBlockAspectRatio = breadth / (children[beginIndex].relativeSize/relGroupSize*length);
+			if (firstBlockAspectRatio<MAX_RATIO) {
 				// firstBlock uses full width
 				int blockWidth = (int)Math.round( children[beginIndex].relativeSize/relGroupSize*length );
 				if (horizontal) {
@@ -139,7 +149,23 @@ public class CushionView extends Canvas {
 			}
 			
 			// TODO: build first row
+			double relRowSize = 0.0;
+			for (int i=beginIndex; i<endIndex; i++) {
+				Cushion child = children[i];
+				relRowSize += child.relativeSize;
+				int blockWidth = (int)Math.round( relRowSize/relGroupSize*length );
+				if ((blockWidth>0 && breadth/blockWidth < (i+1-beginIndex)) || i+1>=endIndex) {
+					drawChildrenGroupAsSimpleStrips(children, beginIndex, i+1, relRowSize, g, x, y, !horizontal, breadth, blockWidth);
+					if (horizontal) {
+						drawChildrenGroup(children, i+1, endIndex, relGroupSize-relRowSize, g, x+blockWidth,y, length-blockWidth, breadth);
+					} else {
+						drawChildrenGroup(children, i+1, endIndex, relGroupSize-relRowSize, g, x,y+blockWidth, breadth, length-blockWidth);
+					}
+					return;
+				}
+			}
 			
+			System.out.println("#####################################################################");
 			// simple stripes
 			drawChildrenGroupAsSimpleStrips(children, beginIndex, endIndex, relGroupSize, g, x, y, horizontal, length, breadth);
 		}
