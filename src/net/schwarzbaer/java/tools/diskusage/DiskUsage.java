@@ -128,22 +128,28 @@ public class DiskUsage implements FileMap.GuiContext {
 			System.out.print("Read Config ... ");
 			ConfigBlock currentConfigBlock = null;
 			try (BufferedReader in=new BufferedReader(new InputStreamReader(new FileInputStream(CONFIG_FILE), StandardCharsets.UTF_8))) {
-				String str;
+				String str; int lineCount = 0;
 				while ( (str=in.readLine())!=null ) {
-					
-					if (str.equals(HEADER_CUSHIONPAINTER)) currentConfigBlock = ConfigBlock.CushionPainter;
-					if (currentConfigBlock == ConfigBlock.CushionPainter) {
-						FileMap.Painter.CushionPainter.Config config = FileMap.Painter.CushionPainter.config;
-						if (str.startsWith(VALUE_CUSHIONPAINTER_SUN                 +"=")) config.sun                = parseNormal( str.substring(VALUE_CUSHIONPAINTER_SUN                 .length()+1) );
-						if (str.startsWith(VALUE_CUSHIONPAINTER_SELECTED_FILE       +"=")) config.selectedFile       = parseColor ( str.substring(VALUE_CUSHIONPAINTER_SELECTED_FILE       .length()+1) );
-						if (str.startsWith(VALUE_CUSHIONPAINTER_SELECTED_FOLDER     +"=")) config.selectedFolder     = parseColor ( str.substring(VALUE_CUSHIONPAINTER_SELECTED_FOLDER     .length()+1) );
-						if (str.startsWith(VALUE_CUSHIONPAINTER_MATERIAL_COLOR      +"=")) config.materialColor      = parseColor ( str.substring(VALUE_CUSHIONPAINTER_MATERIAL_COLOR      .length()+1) );
-						if (str.startsWith(VALUE_CUSHIONPAINTER_MATERIAL_PHONG_EXP  +"=")) config.materialPhongExp   = parseDouble( str.substring(VALUE_CUSHIONPAINTER_MATERIAL_PHONG_EXP  .length()+1) );
-						if (str.startsWith(VALUE_CUSHIONPAINTER_CUSHIONESS          +"=")) config.alpha              = parseDouble( str.substring(VALUE_CUSHIONPAINTER_CUSHIONESS          .length()+1) );
-						if (str.startsWith(VALUE_CUSHIONPAINTER_CUSHION_HEIGHT_SCALE+"=")) config.cushionHeightScale = parseFloat ( str.substring(VALUE_CUSHIONPAINTER_CUSHION_HEIGHT_SCALE.length()+1) );
-						if (str.startsWith(VALUE_CUSHIONPAINTER_AUTOMATIC_SAVING    +"=")) config.automaticSaving    = parseBool  ( str.substring(VALUE_CUSHIONPAINTER_AUTOMATIC_SAVING    .length()+1) );
+					try {
+						
+						if (str.equals(HEADER_CUSHIONPAINTER)) currentConfigBlock = ConfigBlock.CushionPainter;
+						if (currentConfigBlock == ConfigBlock.CushionPainter) {
+							FileMap.Painter.CushionPainter.Config config = FileMap.Painter.CushionPainter.config;
+							if (str.startsWith(VALUE_CUSHIONPAINTER_SUN                 +"=")) config.sun                = parseNormal( str.substring(VALUE_CUSHIONPAINTER_SUN                 .length()+1) );
+							if (str.startsWith(VALUE_CUSHIONPAINTER_SELECTED_FILE       +"=")) config.selectedFile       = parseColor ( str.substring(VALUE_CUSHIONPAINTER_SELECTED_FILE       .length()+1) );
+							if (str.startsWith(VALUE_CUSHIONPAINTER_SELECTED_FOLDER     +"=")) config.selectedFolder     = parseColor ( str.substring(VALUE_CUSHIONPAINTER_SELECTED_FOLDER     .length()+1) );
+							if (str.startsWith(VALUE_CUSHIONPAINTER_MATERIAL_COLOR      +"=")) config.materialColor      = parseColor ( str.substring(VALUE_CUSHIONPAINTER_MATERIAL_COLOR      .length()+1) );
+							if (str.startsWith(VALUE_CUSHIONPAINTER_MATERIAL_PHONG_EXP  +"=")) config.materialPhongExp   = parseDouble( str.substring(VALUE_CUSHIONPAINTER_MATERIAL_PHONG_EXP  .length()+1) );
+							if (str.startsWith(VALUE_CUSHIONPAINTER_CUSHIONESS          +"=")) config.alpha              = parseDouble( str.substring(VALUE_CUSHIONPAINTER_CUSHIONESS          .length()+1) );
+							if (str.startsWith(VALUE_CUSHIONPAINTER_CUSHION_HEIGHT_SCALE+"=")) config.cushionHeightScale = parseFloat ( str.substring(VALUE_CUSHIONPAINTER_CUSHION_HEIGHT_SCALE.length()+1) );
+							if (str.startsWith(VALUE_CUSHIONPAINTER_AUTOMATIC_SAVING    +"=")) config.automaticSaving    = parseBool  ( str.substring(VALUE_CUSHIONPAINTER_AUTOMATIC_SAVING    .length()+1) );
+						}
+						
+					} catch (ParseException e) {
+						System.err.printf("%nParseException while parsing line %d: \"%s\"%n", lineCount, str);
+						e.printStackTrace(System.err);
 					}
-					
+					lineCount++;
 				}
 			}
 			catch (FileNotFoundException e) {}
@@ -151,22 +157,33 @@ public class DiskUsage implements FileMap.GuiContext {
 			System.out.println("done");
 		}
 		
+		private static class ParseException extends Exception {
+			private static final long serialVersionUID = -2041201413914094651L;
+			
+			ParseException(String format, Object...args) {
+				super(String.format(Locale.ENGLISH, format, args));
+			}
+			@SuppressWarnings("unused")
+			ParseException(Throwable t, String format, Object...args) {
+				super(String.format(Locale.ENGLISH, format, args),t);
+			}
+		}
 		private static boolean parseBool(String str) {
 			return str.toLowerCase().equals("true");
 		}
-		private static float parseFloat(String str) {
+		private static float parseFloat(String str) throws ParseException {
 			try { return Float.parseFloat(str); }
-			catch (NumberFormatException e) { return Float.NaN; }
+			catch (NumberFormatException e) { throw new ParseException("Can't parse float value: \"%s\"", str); }
 		}
-		private static double parseDouble(String str) {
+		private static double parseDouble(String str) throws ParseException {
 			try { return Double.parseDouble(str); }
-			catch (NumberFormatException e) { return Double.NaN; }
+			catch (NumberFormatException e) { throw new ParseException("Can't parse double value: \"%s\"", str); }
 		}
-		private static Color parseColor(String str) {
+		private static Color parseColor(String str) throws ParseException {
 			try { return new Color(Integer.parseInt(str,16));}
-			catch (NumberFormatException e) { return null; }
+			catch (NumberFormatException e) { throw new ParseException("Can't parse Color value: \"%s\"", str); }
 		}
-		private static Normal parseNormal(String str) {
+		private static Normal parseNormal(String str) throws ParseException {
 			String[] strs = str.split(",");
 			if (strs.length!=3) return null;
 			try {
@@ -176,7 +193,7 @@ public class DiskUsage implements FileMap.GuiContext {
 						Double.parseDouble(strs[2])
 						);
 			} catch (NumberFormatException e) {
-				return null;
+				 throw new ParseException("Can't parse Normal value: \"%s\"", str); 
 			}
 		}
 		
