@@ -1,5 +1,6 @@
 package net.schwarzbaer.java.tools.diskusage;
 
+import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
@@ -23,6 +24,7 @@ import java.util.function.Supplier;
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JLabel;
 import javax.swing.JMenuItem;
@@ -46,6 +48,7 @@ public class FileMap extends Canvas {
 	
 	interface GuiContext {
 		void expandPathInTree(DiskItem diskItem);
+		void saveConfig();
 	}
 	
 	private final GuiContext guiContext;
@@ -209,7 +212,7 @@ public class FileMap extends Canvas {
 		}
 	}
 	
-	private static abstract class Painter {
+	static abstract class Painter {
 		
 		protected Layouter layouter = null;
 		public void setLayouter(Layouter layouter) {
@@ -236,7 +239,7 @@ public class FileMap extends Canvas {
 		}
 		
 		
-		private static class RectanglePainter extends Painter {
+		static class RectanglePainter extends Painter {
 			
 			private Color[] colors;
 			private Color selectedLeaf;
@@ -269,14 +272,14 @@ public class FileMap extends Canvas {
 			}
 		}
 		
-		private static class RectanglePainter2 extends RectanglePainter {
+		static class RectanglePainter2 extends RectanglePainter {
 			RectanglePainter2() {
 				super(Color.GREEN, Color.BLUE, new Color[] { Color.ORANGE, Color.DARK_GRAY, Color.PINK });
 			}
 		}
 		
 		
-		private static class CushionPainter extends Painter {
+		static class CushionPainter extends Painter {
 			
 			final static Config config = new Config();
 			
@@ -292,7 +295,7 @@ public class FileMap extends Canvas {
 			private ConfigGUI configGUI = null;
 
 			CushionPainter() {
-				bumpMappingShading = new MaterialShading(new Normal(1,-1,2).normalize(), config.material, 0, config.materialPhongExp);
+				bumpMappingShading = new MaterialShading(config.sun, config.materialColor, 0, config.materialPhongExp);
 				bumpMapping = new BumpMapping(false);
 				bumpMapping.setShading(bumpMappingShading);
 				imageCache = new ImageCache<>(bumpMapping::renderImageUncached);
@@ -345,7 +348,7 @@ public class FileMap extends Canvas {
 
 			private void drawSelected(MapItem mapItem, Graphics g) {
 				if (mapItem.isSelected) {
-					if (mapItem.children.length==0) g.setColor(config.selectedLeaf);
+					if (mapItem.children.length==0) g.setColor(config.selectedFile);
 					else g.setColor(config.selectedFolder);
 					Rectangle b = mapItem.screenBox;
 					g.drawRect(b.x, b.y, b.width-1, b.height-1);
@@ -388,24 +391,28 @@ public class FileMap extends Canvas {
 				}
 			}
 
-			private static class Config {
-				private Color selectedLeaf;
-				private Color selectedFolder;
-				private Color material;
-				private double materialPhongExp;
-				private double alpha;
-				private float cushionHeightScale;
+			static class Config {
+				Normal sun;
+				Color selectedFile;
+				Color selectedFolder;
+				Color materialColor;
+				double materialPhongExp;
+				double alpha;
+				float cushionHeightScale;
+				boolean automaticSaving;
 				
 				Config() {
 					this(Color.YELLOW, Color.ORANGE, new Color(0xafafaf));
 				}
-				Config(Color selectedLeaf, Color selectedFolder, Color material) {
-					this.selectedLeaf = selectedLeaf;
+				Config(Color selectedFile, Color selectedFolder, Color materialColor) {
+					this.selectedFile = selectedFile;
 					this.selectedFolder = selectedFolder;
-					this.material = material;
+					this.materialColor = materialColor;
 					this.materialPhongExp = 40;
 					this.alpha = 90*Math.PI/180;
 					this.cushionHeightScale = 1/16f;
+					this.sun = new Normal(1,-1,2).normalize();
+					this.automaticSaving = false;
 				}
 				
 			}
@@ -413,54 +420,88 @@ public class FileMap extends Canvas {
 			private class ConfigGUI extends StandardMainWindow {
 				private static final long serialVersionUID = 7270004938108015260L;
 				private FileMap fileMap;
+				private JButton saveChangesButton;
 			
 				public ConfigGUI(FileMap fileMap) {
 					super("Config for Cushion Painter",StandardMainWindow.DefaultCloseOperation.HIDE_ON_CLOSE);
 					this.fileMap = fileMap;
 					
-					Normal sun = new Normal();
-					bumpMapping.getSun(sun);
-					BumpmappingSunControl sunControl = new BumpmappingSunControl(sun.x, sun.y, sun.z);
+					BumpmappingSunControl sunControl = new BumpmappingSunControl(config.sun.x, config.sun.y, config.sun.z);
 					sunControl.setPreferredSize(new Dimension(300,300));
 					sunControl.addValueChangeListener((x,y,z)->{
-						sun.set(x,y,z);
+						config.sun.set(x,y,z);
 						bumpMapping.setSun(x,y,z);
 						imageCache.resetImage();
-						fileMap.repaint();
+						this.fileMap.repaint();
+						valueChanged();
 					});
 					
 					GridBagConstraints c = new GridBagConstraints();
-					JPanel contentPane = new JPanel(new GridBagLayout());
-					contentPane.setBorder(BorderFactory.createEmptyBorder(3,3,3,3));
+					JPanel valuePanel = new JPanel(new GridBagLayout());
 					
 					int y;
 					GBC.setFill(c, GBC.GridFill.HORIZONTAL);
 					y=0; GBC.setWeights(c,0,0);
-					contentPane.add(new JLabel("Selected File Color: "  ),GBC.setGridPos(c,0,y++));
-					contentPane.add(new JLabel("Selected Folder Color: "),GBC.setGridPos(c,0,y++));
-					contentPane.add(new JLabel("Cushion Base Color: "   ),GBC.setGridPos(c,0,y++));
-					contentPane.add(new JLabel("Phong Exponent: "       ),GBC.setGridPos(c,0,y++));
-					contentPane.add(new JLabel("Cushioness: "           ),GBC.setGridPos(c,0,y++));
-					contentPane.add(new JLabel("Cushion Height: "       ),GBC.setGridPos(c,0,y++));
+					valuePanel.add(new JLabel("Selected File Color: "  ),GBC.setGridPos(c,0,y++));
+					valuePanel.add(new JLabel("Selected Folder Color: "),GBC.setGridPos(c,0,y++));
+					valuePanel.add(new JLabel("Cushion Base Color: "   ),GBC.setGridPos(c,0,y++));
+					valuePanel.add(new JLabel("Phong Exponent: "       ),GBC.setGridPos(c,0,y++));
+					valuePanel.add(new JLabel("Cushioness: "           ),GBC.setGridPos(c,0,y++));
+					valuePanel.add(new JLabel("Cushion Height: "       ),GBC.setGridPos(c,0,y++));
 					y=0; GBC.setWeights(c,1,0);
-					contentPane.add(createColorbutton(config.selectedLeaf  , "Set Color of Selected File"  , color->config.selectedLeaf  =color), GBC.setGridPos(c,1,y++));
-					contentPane.add(createColorbutton(config.selectedFolder, "Set Color of Selected Folder", color->config.selectedFolder=color), GBC.setGridPos(c,1,y++));
-					contentPane.add(createColorbutton(config.material      , "Select Cushion Base Color"   , this::setMaterialColor), GBC.setGridPos(c,1,y++));
-					contentPane.add(createDoubleTextField(config.materialPhongExp, this::setPhongExp), GBC.setGridPos(c,1,y++));
-					contentPane.add(createSlider(10*Math.PI/180,config.alpha,Math.PI,value->config.alpha=value), GBC.setGridPos(c,1,y++));
-					contentPane.add(createSlider(-5,Math.log(config.cushionHeightScale)/Math.log(2),1,value->config.cushionHeightScale=(float) Math.exp(value*Math.log(2))), GBC.setGridPos(c,1,y++));
+					valuePanel.add(createColorbutton(config.selectedFile  , "Set Color of Selected File"  , color->{ config.selectedFile  =color; valueChanged(); }), GBC.setGridPos(c,1,y++));
+					valuePanel.add(createColorbutton(config.selectedFolder, "Set Color of Selected Folder", color->{ config.selectedFolder=color; valueChanged(); }), GBC.setGridPos(c,1,y++));
+					valuePanel.add(createColorbutton(config.materialColor , "Select Cushion Base Color"   , this::setMaterialColor), GBC.setGridPos(c,1,y++));
+					valuePanel.add(createDoubleTextField(config.materialPhongExp, this::setPhongExp), GBC.setGridPos(c,1,y++));
+					valuePanel.add(createSlider(10*Math.PI/180,config.alpha,Math.PI,value->{ config.alpha=value; valueChanged(); }), GBC.setGridPos(c,1,y++));
+					valuePanel.add(createSlider(-5,Math.log(config.cushionHeightScale)/Math.log(2),1,value->{ config.cushionHeightScale=(float) Math.exp(value*Math.log(2)); valueChanged(); }), GBC.setGridPos(c,1,y++));
 					
 					GBC.setGridPos(c,0,y++);
 					GBC.setFill(c, GBC.GridFill.BOTH);
 					GBC.setGridWidth(c,2);
 					GBC.setWeights(c,1,1);
-					contentPane.add(sunControl, c);
+					valuePanel.add(sunControl, c);
+					
+					JPanel buttonPanel = new JPanel(new GridBagLayout());
+					GBC.reset(c); GBC.setWeights(c,1,0);
+					buttonPanel.add(new JLabel(), c);
+					GBC.setWeights(c,0,0);
+					buttonPanel.add(createCheckBox("Automatic Saving",config.automaticSaving,b->{ config.automaticSaving=b; valueChanged(); }), c);
+					buttonPanel.add(saveChangesButton = createButton("Save Changes",e->saveConfig()), c);
+					saveChangesButton.setEnabled(false);
+					
+					JPanel contentPane = new JPanel(new BorderLayout(3,3));
+					contentPane.setBorder(BorderFactory.createEmptyBorder(3,3,3,3));
+					contentPane.add(valuePanel,BorderLayout.CENTER);
+					contentPane.add(buttonPanel,BorderLayout.SOUTH);
 					
 					startGUI(contentPane);
 				}
+
+				private void valueChanged() {
+					if (config.automaticSaving) saveConfig();
+					else saveChangesButton.setEnabled(true);
+				}
+
+				private void saveConfig() {
+					fileMap.guiContext.saveConfig();
+					saveChangesButton.setEnabled(false);
+				}
+
+				private JCheckBox createCheckBox(String title, boolean isSelected, Consumer<Boolean> setValue) {
+					JCheckBox comp = new JCheckBox(title,isSelected);
+					comp.addActionListener(e->setValue.accept(comp.isSelected()));
+					return comp;
+				}
+
+				private JButton createButton(String title, ActionListener al) {
+					JButton comp = new JButton(title);
+					comp.addActionListener(al);
+					return comp;
+				}
 				
-				private void setMaterialColor(Color color    ) { config.material = color; bumpMappingShading.setMaterialColor(color); }
-				private void setPhongExp     (double phongExp) { config.materialPhongExp = phongExp; bumpMappingShading.setPhongExp(phongExp); }
+				private void setMaterialColor(Color color    ) { config.materialColor    = color   ; bumpMappingShading.setMaterialColor(color); valueChanged(); }
+				private void setPhongExp     (double phongExp) { config.materialPhongExp = phongExp; bumpMappingShading.setPhongExp(phongExp);   valueChanged(); }
 				
 				private JSlider createSlider(double min, double value, double max, Consumer<Double> setValue) {
 					int minInt = 0;
@@ -527,7 +568,7 @@ public class FileMap extends Canvas {
 		}
 	}
 	
-	private static abstract class Layouter {
+	static abstract class Layouter {
 		private Painter painter = null;
 
 		public void setPainter(Painter painter) {
@@ -559,7 +600,7 @@ public class FileMap extends Canvas {
 		}
 		
 		
-		private static class GroupLayouter extends Layouter {
+		static class GroupLayouter extends Layouter {
 			private static final double MAX_RATIO = 3.0; // 1/X < w/h < X
 		
 			@Override
@@ -642,7 +683,7 @@ public class FileMap extends Canvas {
 			}
 		}
 		
-		private static class SimpleStripsLayouter extends Layouter {
+		static class SimpleStripsLayouter extends Layouter {
 		
 			@Override
 			protected void layoutChildren(MapItem[] children, Graphics g, int x, int y, int width, int height) {
@@ -679,7 +720,6 @@ public class FileMap extends Canvas {
 			}
 		}
 
-		@SuppressWarnings("unused")
 		static void reset(GridBagConstraints c) {
 			c.gridx = GridBagConstraints.RELATIVE;
 			c.gridy = GridBagConstraints.RELATIVE;
