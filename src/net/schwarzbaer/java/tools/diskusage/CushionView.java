@@ -1,11 +1,13 @@
 package net.schwarzbaer.java.tools.diskusage;
 
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Graphics;
 import java.awt.Rectangle;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
+import java.awt.image.BufferedImage;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.function.Consumer;
@@ -18,6 +20,10 @@ import javax.swing.JMenuItem;
 import javax.swing.JPopupMenu;
 
 import net.schwarzbaer.gui.Canvas;
+import net.schwarzbaer.image.BumpMapping;
+import net.schwarzbaer.image.BumpMapping.Normal;
+import net.schwarzbaer.image.BumpMapping.Shading.MaterialShading;
+import net.schwarzbaer.image.ImageCache;
 import net.schwarzbaer.java.tools.diskusage.DiskUsage.DiskItem;
 
 public class CushionView extends Canvas {
@@ -37,7 +43,7 @@ public class CushionView extends Canvas {
 	public CushionView(DiskItem root, int width, int height, GuiContext guiContext) {
 		this.guiContext = guiContext;
 		this.root = new Cushion(root);
-		Painter .Type pt = Painter .Type.RectanglePainter;
+		Painter .Type pt = Painter .Type.CushionPainter;
 		Layouter.Type lt = Layouter.Type.GroupLayouter;
 		currentPainter  = pt.createPainter .get();
 		currentLayouter = lt.createLayouter.get();
@@ -98,23 +104,39 @@ public class CushionView extends Canvas {
 	
 	private class ContextMenu extends JPopupMenu {
 		private static final long serialVersionUID = 5839108151130675728L;
+		private JMenuItem configureLayouter;
+		private JMenuItem configurePainter;
 		
 		ContextMenu(Painter.Type pt, Layouter.Type pst) {
-			createMenuItems(pst, Layouter.Type.values(), t->t.title, CushionView.this::setLayouter);
+			createCheckBoxMenuItems(pst, Layouter.Type.values(), t->t.title, CushionView.this::setLayouter);
+			add(configureLayouter = createMenuItem("Configure Layouter ...",e->currentLayouter.showConfig(CushionView.this)));
 			addSeparator();
-			createMenuItems(pt , Painter .Type.values(), t->t.title, CushionView.this::setPainter );
+			createCheckBoxMenuItems(pt , Painter .Type.values(), t->t.title, CushionView.this::setPainter );
+			add(configurePainter = createMenuItem("Configure Painter ...",e->currentPainter.showConfig(CushionView.this)));
 		}
-		private <E extends Enum<E>> void createMenuItems(E selected, E[] values, Function<E,String> getTitle, Consumer<E> set) {
+		private <E extends Enum<E>> void createCheckBoxMenuItems(E selected, E[] values, Function<E,String> getTitle, Consumer<E> set) {
 			ButtonGroup bg = new ButtonGroup();
 			for (E t:values)
-				add(createMenuItem(getTitle.apply(t),t==selected,bg,e->set.accept(t)));
+				add(createCheckBoxMenuItem(getTitle.apply(t),t==selected,bg,e->set.accept(t)));
 		}
-		private JMenuItem createMenuItem(String title, boolean isSelected, ButtonGroup bg, ActionListener al) {
+		private JCheckBoxMenuItem createCheckBoxMenuItem(String title, boolean isSelected, ButtonGroup bg, ActionListener al) {
 			JCheckBoxMenuItem comp = new JCheckBoxMenuItem(title,isSelected);
 			comp.addActionListener(al);
 			bg.add(comp);
 			return comp;
 		}
+		private JMenuItem createMenuItem(String title, ActionListener al) {
+			JMenuItem comp = new JMenuItem(title);
+			comp.addActionListener(al);
+			return comp;
+		}
+		@Override
+		public void show(Component invoker, int x, int y) {
+			configureLayouter.setEnabled(currentLayouter!=null && currentLayouter.isConfigurable());
+			configurePainter .setEnabled(currentPainter !=null && currentPainter .isConfigurable());
+			super.show(invoker, x, y);
+		}
+		
 	}
 
 	private static class Cushion {
@@ -173,16 +195,19 @@ public class CushionView extends Canvas {
 	
 	private static abstract class Painter {
 		
-		protected Layouter paintStrategy = null;
-		public void setLayouter(Layouter paintStrategy) {
-			this.paintStrategy = paintStrategy;
+		protected Layouter layouter = null;
+		public void setLayouter(Layouter layouter) {
+			this.layouter = layouter;
 		}
+		public void showConfig(CushionView cushionView) {}
+		public boolean isConfigurable() { return false; }
 		public abstract void paintAll(Cushion root, Graphics g, int x, int y, int width, int height);
 		public abstract void paintCushion(Cushion cushion, Graphics g, int x, int y, int width, int height);
 		
 		enum Type {
 			RectanglePainter ("Rectangle Painter"  ,Painter.RectanglePainter ::new),
 			RectanglePainter2("Rectangle Painter 2",Painter.RectanglePainter2::new),
+			CushionPainter   ("Cushion Painter"    ,Painter.CushionPainter   ::new),
 			;
 			private String title;
 			private Supplier<Painter> createPainter;
@@ -210,7 +235,7 @@ public class CushionView extends Canvas {
 			
 			@Override
 			public void paintAll(Cushion root, Graphics g, int x, int y, int width, int height) {
-				paintStrategy.layoutCushion(root,g,x,y,width,height);
+				layouter.layoutCushion(root,g,x,y,width,height);
 			}
 			@Override
 			public void paintCushion(Cushion cushion, Graphics g, int x, int y, int width, int height) {
@@ -231,6 +256,107 @@ public class CushionView extends Canvas {
 				super(Color.GREEN, Color.BLUE, new Color[] { Color.ORANGE, Color.DARK_GRAY, Color.PINK });
 			}
 		}
+		
+		
+		private static class CushionPainter extends Painter {
+			
+			private BumpMapping bumpMapping;
+			private ImageCache<BufferedImage> imageCache;
+			private float[][] heightMap;
+			private Color selectedLeaf;
+			private Color selectedFolder;
+			private int xOffset;
+			private int yOffset;
+
+			CushionPainter() {
+				this(Color.YELLOW, Color.ORANGE, new Color(0xafafaf));
+			}
+			CushionPainter(Color selectedLeaf, Color selectedFolder, Color material) {
+				this.selectedLeaf = selectedLeaf;
+				this.selectedFolder = selectedFolder;
+				bumpMapping = new BumpMapping(false);
+				bumpMapping.setShading(new MaterialShading(new Normal(1,-1,2).normalize(), material, 0, 40));
+				imageCache = new ImageCache<>(bumpMapping::renderImageUncached);
+			}
+			
+			@Override
+			public boolean isConfigurable() { return true; }
+			
+			@Override
+			public void showConfig(CushionView cushionView) {
+				// TODO Auto-generated method stub
+			}
+			
+			@Override
+			public void setLayouter(Layouter layouter) {
+				imageCache.resetImage();
+				super.setLayouter(layouter);
+			}
+			
+			@Override
+			public void paintAll(Cushion root, Graphics g, int x, int y, int width, int height) {
+				if (!imageCache.hasImage(width,height)) {
+					heightMap = new float[width][height];
+					for (float[] column:heightMap) Arrays.fill(column,0);
+					xOffset = x;
+					yOffset = y;
+					layouter.layoutCushion(root,null,x,y,width,height);
+					bumpMapping.setNormalFunction((int xN, int yN)->{
+						Normal n = new Normal();
+						addNormal(n,computeNormal(xN,yN,+1, 0)); 
+						addNormal(n,computeNormal(xN,yN,-1, 0)); 
+						addNormal(n,computeNormal(xN,yN, 0,+1)); 
+						addNormal(n,computeNormal(xN,yN, 0,-1));
+						return n.normalize();
+					});
+				}
+				g.drawImage(imageCache.getImage(width,height), x, y, null);
+				drawSelected(root,g);
+			}
+
+			private void drawSelected(Cushion cushion, Graphics g) {
+				if (cushion.isSelected) {
+					if (cushion.children.length==0) g.setColor(selectedLeaf);
+					else g.setColor(selectedFolder);
+					Rectangle b = cushion.screenBox;
+					g.drawRect(b.x, b.y, b.width-1, b.height-1);
+					for (Cushion child:cushion.children)
+						drawSelected(child,g);
+				}
+			}
+			private void addNormal(Normal base, Normal n) {
+				if (n != null) {
+					base.x += n.x;
+					base.y += n.y;
+					base.z += n.z;
+				}
+			}
+
+			private Normal computeNormal(int x, int y, int dx, int dy) {
+				if (x+dx<0 || x+dx>=heightMap   .length) return null;
+				if (y+dy<0 || y+dy>=heightMap[0].length) return null;
+				float dh = heightMap[x][y]-heightMap[x+dx][y+dy];
+				if (dx!=0) return new Normal(dh*dx,0,Math.abs(dx)).normalize();
+				if (dy!=0) return new Normal(0,dh*dy,Math.abs(dy)).normalize();
+				return null;
+			}
+
+			@Override
+			public void paintCushion(Cushion cushion, Graphics g, int x, int y, int width, int height) {
+				// TODO: cushion color 
+				if (width<2 || height<2) return;
+				float cushionHeight = Math.min(width,height)/16f; // TODO: configure scale
+				float xm = (width -1)*0.5f;
+				float ym = (height-1)*0.5f;
+				for (int x1=0; x1<width; ++x1) {
+					float hX = (float) Math.sqrt(1-(x1/xm-1)*(x1/xm-1));
+					for (int y1=0; y1<height; ++y1) {
+						float hY = (float) Math.sqrt(1-(y1/ym-1)*(y1/ym-1));
+						heightMap[x+x1-xOffset][y+y1-yOffset] += cushionHeight * hX * hY;
+					}
+				}
+			}
+		}
 	}
 	
 	private static abstract class Layouter {
@@ -241,6 +367,9 @@ public class CushionView extends Canvas {
 			this.painter.setLayouter(this);
 		}
 		
+		public void showConfig(CushionView cushionView) {}
+		public boolean isConfigurable() { return false; }
+
 		public void layoutCushion(Cushion cushion, Graphics g, int x, int y, int width, int height) {
 			if (width<=0 || height<=0) { cushion.screenBox.setSize(0,0); return; }
 			cushion.screenBox.setBounds(x,y,width,height);
