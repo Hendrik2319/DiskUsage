@@ -26,7 +26,7 @@ import javax.swing.tree.TreePath;
 
 import net.schwarzbaer.gui.StandardMainWindow;
 
-public class DiskUsage implements CushionView.GuiContext {
+public class DiskUsage implements FileMap.GuiContext {
 
 	public static void main(String[] args) {
 		try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
@@ -39,7 +39,7 @@ public class DiskUsage implements CushionView.GuiContext {
 	private DiskItem root;
 	private DiskItemTreeNode rootTreeNode;
 	private JTree treeView;
-	private CushionView cushionView;
+	private FileMap fileMap;
 
 	private void createGUI() {
 		rootTreeNode = new DiskItemTreeNode(root);
@@ -50,13 +50,13 @@ public class DiskUsage implements CushionView.GuiContext {
 			Object object = treePath.getLastPathComponent();
 			if (object instanceof DiskItemTreeNode) {
 				DiskItemTreeNode treeNode = (DiskItemTreeNode) object;
-				cushionView.setSelected(treeNode.diskItem);
+				fileMap.setSelected(treeNode.diskItem);
 			}
 		});
 		
-		cushionView = new CushionView(root,1000,800,this);
-		cushionView.setBorder(BorderFactory.createTitledBorder("Cushion View"));
-		cushionView.setPreferredSize(new Dimension(1000,800));
+		fileMap = new FileMap(root,1000,800,this);
+		fileMap.setBorder(BorderFactory.createTitledBorder("File Map"));
+		fileMap.setPreferredSize(new Dimension(1000,800));
 		
 		JScrollPane treeScrollPane = new JScrollPane(treeView);
 		treeScrollPane.setBorder(BorderFactory.createTitledBorder("Folder Structure"));
@@ -65,7 +65,7 @@ public class DiskUsage implements CushionView.GuiContext {
 		JPanel contentPane = new JPanel(new BorderLayout(3,3));
 		contentPane.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
 		contentPane.add(treeScrollPane,BorderLayout.WEST);
-		contentPane.add(cushionView,BorderLayout.CENTER);
+		contentPane.add(fileMap,BorderLayout.CENTER);
 		
 		StandardMainWindow mainWindow = new StandardMainWindow("DiskUsage");
 		mainWindow.startGUI(contentPane);
