@@ -4,5 +4,6 @@
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
 	<classpathentry combineaccessrules="false" kind="src" path="/CommonLib_gui_essentials"/>
 	<classpathentry combineaccessrules="false" kind="src" path="/CommonLib_Imaging"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/CommonLib_HSColorChooser"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

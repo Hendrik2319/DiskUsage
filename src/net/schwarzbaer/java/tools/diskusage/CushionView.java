@@ -2,9 +2,15 @@ package net.schwarzbaer.java.tools.diskusage;
 
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Dimension;
 import java.awt.Graphics;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
 import java.awt.Rectangle;
 import java.awt.event.ActionListener;
+import java.awt.event.FocusEvent;
+import java.awt.event.FocusListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
 import java.awt.image.BufferedImage;
@@ -14,12 +20,21 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
+import javax.swing.JButton;
 import javax.swing.JCheckBoxMenuItem;
+import javax.swing.JLabel;
 import javax.swing.JMenuItem;
+import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
+import javax.swing.JSlider;
+import javax.swing.JTextField;
 
+import net.schwarzbaer.gui.BumpmappingSunControl;
 import net.schwarzbaer.gui.Canvas;
+import net.schwarzbaer.gui.HSColorChooser;
+import net.schwarzbaer.gui.StandardMainWindow;
 import net.schwarzbaer.image.BumpMapping;
 import net.schwarzbaer.image.BumpMapping.Normal;
 import net.schwarzbaer.image.BumpMapping.Shading.MaterialShading;
@@ -74,6 +89,7 @@ public class CushionView extends Canvas {
 	}
 
 	private void setPainter(Painter.Type t) {
+		if (currentPainter.isConfigurable()) currentPainter.hideConfig();
 		currentPainter = t.createPainter.get();
 		currentLayouter.setPainter(currentPainter);
 		repaint();
@@ -199,8 +215,10 @@ public class CushionView extends Canvas {
 		public void setLayouter(Layouter layouter) {
 			this.layouter = layouter;
 		}
-		public void showConfig(CushionView cushionView) {}
 		public boolean isConfigurable() { return false; }
+		public void showConfig(CushionView cushionView) {}
+		public void hideConfig() {}
+		
 		public abstract void paintAll(Cushion root, Graphics g, int x, int y, int width, int height);
 		public abstract void paintCushion(Cushion cushion, Graphics g, int x, int y, int width, int height);
 		
@@ -260,55 +278,66 @@ public class CushionView extends Canvas {
 		
 		private static class CushionPainter extends Painter {
 			
-			private BumpMapping bumpMapping;
-			private ImageCache<BufferedImage> imageCache;
-			private float[][] heightMap;
-			private Color selectedLeaf;
-			private Color selectedFolder;
+			final static CushionPainterConfig config = new CushionPainterConfig();
+			
+			private final ImageCache<BufferedImage> imageCache;
+			private final BumpMapping bumpMapping;
+			private final MaterialShading bumpMappingShading;
+			
+			private float[][] tempHeightMap;
 			private int xOffset;
 			private int yOffset;
+			private boolean updateNormalMap = true;
+
+			private CushionPainterConfigGUI configGUI = null;
 
 			CushionPainter() {
-				this(Color.YELLOW, Color.ORANGE, new Color(0xafafaf));
-			}
-			CushionPainter(Color selectedLeaf, Color selectedFolder, Color material) {
-				this.selectedLeaf = selectedLeaf;
-				this.selectedFolder = selectedFolder;
+				bumpMappingShading = new MaterialShading(new Normal(1,-1,2).normalize(), config.material, 0, config.materialPhongExp);
 				bumpMapping = new BumpMapping(false);
-				bumpMapping.setShading(new MaterialShading(new Normal(1,-1,2).normalize(), material, 0, 40));
+				bumpMapping.setShading(bumpMappingShading);
 				imageCache = new ImageCache<>(bumpMapping::renderImageUncached);
 			}
 			
 			@Override
-			public boolean isConfigurable() { return true; }
-			
-			@Override
-			public void showConfig(CushionView cushionView) {
-				// TODO Auto-generated method stub
-			}
-			
-			@Override
 			public void setLayouter(Layouter layouter) {
+				updateNormalMap = true;
 				imageCache.resetImage();
 				super.setLayouter(layouter);
+			}
+
+			@Override public boolean isConfigurable() { return true; }			
+			@Override public void hideConfig() {
+				if (configGUI!=null)
+					configGUI.setVisible(false);
+			}
+			@Override public void showConfig(CushionView cushionView) {
+				if (configGUI==null)
+					configGUI = new CushionPainterConfigGUI(cushionView,this);
+				else
+					configGUI.setVisible(true);
 			}
 			
 			@Override
 			public void paintAll(Cushion root, Graphics g, int x, int y, int width, int height) {
-				if (!imageCache.hasImage(width,height)) {
-					heightMap = new float[width][height];
-					for (float[] column:heightMap) Arrays.fill(column,0);
+				if (imageCache.getWidth()!=width || imageCache.getHeight()!=height || updateNormalMap) {
+					updateNormalMap = false;
+					tempHeightMap = new float[width][height];
+					for (float[] column:tempHeightMap) Arrays.fill(column,0);
 					xOffset = x;
 					yOffset = y;
 					layouter.layoutCushion(root,null,x,y,width,height);
-					bumpMapping.setNormalFunction((int xN, int yN)->{
-						Normal n = new Normal();
-						addNormal(n,computeNormal(xN,yN,+1, 0)); 
-						addNormal(n,computeNormal(xN,yN,-1, 0)); 
-						addNormal(n,computeNormal(xN,yN, 0,+1)); 
-						addNormal(n,computeNormal(xN,yN, 0,-1));
-						return n.normalize();
-					});
+					Normal[][] normalMap = new Normal[width][height];
+					for (int x1=0; x1<tempHeightMap.length; ++x1)
+						for (int y1=0; y1<tempHeightMap[x1].length; ++y1) {
+							Normal n = new Normal();
+							addNormal(n,computeNormal(x1,y1,+1, 0)); 
+							addNormal(n,computeNormal(x1,y1,-1, 0)); 
+							addNormal(n,computeNormal(x1,y1, 0,+1)); 
+							addNormal(n,computeNormal(x1,y1, 0,-1));
+							normalMap[x1][y1] = n.normalize();
+						}
+					bumpMapping.setNormalMap(normalMap);
+					tempHeightMap = null;
 				}
 				g.drawImage(imageCache.getImage(width,height), x, y, null);
 				drawSelected(root,g);
@@ -316,8 +345,8 @@ public class CushionView extends Canvas {
 
 			private void drawSelected(Cushion cushion, Graphics g) {
 				if (cushion.isSelected) {
-					if (cushion.children.length==0) g.setColor(selectedLeaf);
-					else g.setColor(selectedFolder);
+					if (cushion.children.length==0) g.setColor(config.selectedLeaf);
+					else g.setColor(config.selectedFolder);
 					Rectangle b = cushion.screenBox;
 					g.drawRect(b.x, b.y, b.width-1, b.height-1);
 					for (Cushion child:cushion.children)
@@ -333,9 +362,9 @@ public class CushionView extends Canvas {
 			}
 
 			private Normal computeNormal(int x, int y, int dx, int dy) {
-				if (x+dx<0 || x+dx>=heightMap   .length) return null;
-				if (y+dy<0 || y+dy>=heightMap[0].length) return null;
-				float dh = heightMap[x][y]-heightMap[x+dx][y+dy];
+				if (x+dx<0 || x+dx>=tempHeightMap   .length) return null;
+				if (y+dy<0 || y+dy>=tempHeightMap[0].length) return null;
+				float dh = tempHeightMap[x][y]-tempHeightMap[x+dx][y+dy];
 				if (dx!=0) return new Normal(dh*dx,0,Math.abs(dx)).normalize();
 				if (dy!=0) return new Normal(0,dh*dy,Math.abs(dy)).normalize();
 				return null;
@@ -345,14 +374,155 @@ public class CushionView extends Canvas {
 			public void paintCushion(Cushion cushion, Graphics g, int x, int y, int width, int height) {
 				// TODO: cushion color 
 				if (width<2 || height<2) return;
-				float cushionHeight = Math.min(width,height)/16f; // TODO: configure scale
-				float xm = (width -1)*0.5f;
-				float ym = (height-1)*0.5f;
+				float cushionHeight = Math.min(width,height)*config.cushionHeightScale;
+				double xm = (width -1)*0.5;
+				double ym = (height-1)*0.5;
+				double cosA2 = Math.cos(config.alpha/2);
+				double sin2A2 = Math.sin(config.alpha/2)*Math.sin(config.alpha/2);
 				for (int x1=0; x1<width; ++x1) {
-					float hX = (float) Math.sqrt(1-(x1/xm-1)*(x1/xm-1));
+					float hX = (float) ((Math.sqrt(1-(x1/xm-1)*(x1/xm-1)*sin2A2)-cosA2)/(1-cosA2));
 					for (int y1=0; y1<height; ++y1) {
-						float hY = (float) Math.sqrt(1-(y1/ym-1)*(y1/ym-1));
-						heightMap[x+x1-xOffset][y+y1-yOffset] += cushionHeight * hX * hY;
+						float hY = (float) ((Math.sqrt(1-(y1/ym-1)*(y1/ym-1)*sin2A2)-cosA2)/(1-cosA2));
+						tempHeightMap[x+x1-xOffset][y+y1-yOffset] += cushionHeight * hX * hY;
+					}
+				}
+			}
+
+			private static class CushionPainterConfig {
+				private Color selectedLeaf;
+				private Color selectedFolder;
+				private Color material;
+				private double materialPhongExp;
+				private double alpha;
+				private float cushionHeightScale;
+				
+				CushionPainterConfig() {
+					this(Color.YELLOW, Color.ORANGE, new Color(0xafafaf));
+				}
+				CushionPainterConfig(Color selectedLeaf, Color selectedFolder, Color material) {
+					this.selectedLeaf = selectedLeaf;
+					this.selectedFolder = selectedFolder;
+					this.material = material;
+					this.materialPhongExp = 40;
+					this.alpha = 90*Math.PI/180;
+					this.cushionHeightScale = 1/16f;
+				}
+				
+			}
+
+			private static class CushionPainterConfigGUI extends StandardMainWindow {
+				private static final long serialVersionUID = 7270004938108015260L;
+				private CushionView cushionView;
+				private CushionPainter cushionPainter;
+			
+				public CushionPainterConfigGUI(CushionView cushionView, CushionPainter cushionPainter) {
+					super("Config for Cushion Painter",StandardMainWindow.DefaultCloseOperation.HIDE_ON_CLOSE);
+					this.cushionView = cushionView;
+					this.cushionPainter = cushionPainter;
+					
+					Normal sun = new Normal();
+					cushionPainter.bumpMapping.getSun(sun);
+					BumpmappingSunControl sunControl = new BumpmappingSunControl(sun.x, sun.y, sun.z);
+					sunControl.setPreferredSize(new Dimension(300,300));
+					sunControl.addValueChangeListener((x,y,z)->{
+						sun.set(x,y,z);
+						cushionPainter.bumpMapping.setSun(x,y,z);
+						cushionPainter.imageCache.resetImage();
+						cushionView.repaint();
+					});
+					
+					GridBagConstraints c = new GridBagConstraints();
+					JPanel contentPane = new JPanel(new GridBagLayout());
+					contentPane.setBorder(BorderFactory.createEmptyBorder(3,3,3,3));
+					
+					int y;
+					GBC.setFill(c, GBC.GridFill.HORIZONTAL);
+					y=0; GBC.setWeights(c,0,0);
+					contentPane.add(new JLabel("Selected File Color: "  ),GBC.setGridPos(c,0,y++));
+					contentPane.add(new JLabel("Selected Folder Color: "),GBC.setGridPos(c,0,y++));
+					contentPane.add(new JLabel("Cushion Base Color: "   ),GBC.setGridPos(c,0,y++));
+					contentPane.add(new JLabel("Phong Exponent: "       ),GBC.setGridPos(c,0,y++));
+					contentPane.add(new JLabel("Cushioness: "           ),GBC.setGridPos(c,0,y++));
+					contentPane.add(new JLabel("Cushion Height: "       ),GBC.setGridPos(c,0,y++));
+					y=0; GBC.setWeights(c,1,0);
+					contentPane.add(createColorbutton(config.selectedLeaf  , "Set Color of Selected File"  , color->config.selectedLeaf  =color), GBC.setGridPos(c,1,y++));
+					contentPane.add(createColorbutton(config.selectedFolder, "Set Color of Selected Folder", color->config.selectedFolder=color), GBC.setGridPos(c,1,y++));
+					contentPane.add(createColorbutton(config.material      , "Select Cushion Base Color"   , this::setMaterialColor), GBC.setGridPos(c,1,y++));
+					contentPane.add(createDoubleTextField(config.materialPhongExp, this::setPhongExp), GBC.setGridPos(c,1,y++));
+					contentPane.add(createSlider(10*Math.PI/180,config.alpha,Math.PI,value->config.alpha=value), GBC.setGridPos(c,1,y++));
+					contentPane.add(createSlider(-5,Math.log(config.cushionHeightScale)/Math.log(2),1,value->config.cushionHeightScale=(float) Math.exp(value*Math.log(2))), GBC.setGridPos(c,1,y++));
+					
+					GBC.setGridPos(c,0,y++);
+					GBC.setFill(c, GBC.GridFill.BOTH);
+					GBC.setGridWidth(c,2);
+					GBC.setWeights(c,1,1);
+					contentPane.add(sunControl, c);
+					
+					startGUI(contentPane);
+				}
+				
+				private void setMaterialColor(Color color    ) { config.material = color; cushionPainter.bumpMappingShading.setMaterialColor(color); }
+				private void setPhongExp     (double phongExp) { config.materialPhongExp = phongExp; cushionPainter.bumpMappingShading.setPhongExp(phongExp); }
+				
+				private JSlider createSlider(double min, double value, double max, Consumer<Double> setValue) {
+					int minInt = 0;
+					int maxInt = 100;
+					int valueInt = (int) ((value-min) * (maxInt-minInt)/(max-min) + minInt);
+					JSlider comp = new JSlider(JSlider.HORIZONTAL,minInt,maxInt,valueInt);
+					comp.addChangeListener(e->{
+						if (comp.getValueIsAdjusting()) return;
+						setValue.accept( (comp.getValue()-minInt) * (max-min)/(maxInt-minInt) + min );
+						cushionPainter.updateNormalMap = true;
+						cushionPainter.imageCache.resetImage();
+						cushionView.repaint();
+					});
+					return comp;
+				}
+				
+				private JButton createColorbutton(Color initColor, String dialogTitle, Consumer<Color> setcolor) {
+					JButton colorbutton = HSColorChooser.createColorbutton(
+							initColor, this, dialogTitle, HSColorChooser.PARENT_CENTER,
+							color->{
+								setcolor.accept(color);
+								cushionPainter.imageCache.resetImage();
+								cushionView.repaint();
+							}
+					);
+					colorbutton.setPreferredSize(new Dimension(30,30));
+					return colorbutton;
+				}
+				
+				private JTextField createDoubleTextField(double value, Consumer<Double> setValue) {
+					JTextField comp = new JTextField(Double.toString(value));
+					Consumer<Double> modifiedSetValue = d->{
+						setValue.accept(d);
+						cushionPainter.imageCache.resetImage();
+						cushionView.repaint();
+					};
+					Color defaultBG = comp.getBackground();
+					comp.addActionListener(e->{ readTextField(comp,modifiedSetValue,defaultBG); });
+					comp.addFocusListener(new FocusListener() {
+						@Override public void focusLost(FocusEvent e) { readTextField(comp,modifiedSetValue,defaultBG); }
+						@Override public void focusGained(FocusEvent e) {}
+					});
+					return comp;
+				}
+			
+				private void readTextField(JTextField comp, Consumer<Double> setValue, Color defaultBG) {
+					double d = parseDouble(comp.getText());
+					if (Double.isNaN(d)) {
+						comp.setBackground(Color.RED);
+					} else {
+						comp.setBackground(defaultBG);
+						setValue.accept(d);
+					}
+				}
+			
+				private double parseDouble(String str) {
+					try {
+						return Double.parseDouble(str);
+					} catch (NumberFormatException e) {
+						return Double.NaN;
 					}
 				}
 			}
@@ -495,4 +665,72 @@ public class CushionView extends Canvas {
 			}
 		}
 	}
+	private static class GBC {
+		enum GridFill {
+			BOTH(GridBagConstraints.BOTH),
+			HORIZONTAL(GridBagConstraints.HORIZONTAL),
+			H(GridBagConstraints.HORIZONTAL),
+			VERTICAL(GridBagConstraints.VERTICAL),
+			V(GridBagConstraints.VERTICAL),
+			NONE(GridBagConstraints.NONE),
+			;
+			private int value;
+			GridFill(int value) {
+				this.value = value;
+				
+			}
+		}
+
+		@SuppressWarnings("unused")
+		static void reset(GridBagConstraints c) {
+			c.gridx = GridBagConstraints.RELATIVE;
+			c.gridy = GridBagConstraints.RELATIVE;
+			c.weightx = 0;
+			c.weighty = 0;
+			c.fill = GridBagConstraints.NONE;
+			c.gridwidth = 1;
+			c.insets = new Insets(0,0,0,0);
+		}
+
+		static GridBagConstraints setWeights(GridBagConstraints c, double weightx, double weighty) {
+			c.weightx = weightx;
+			c.weighty = weighty;
+			return c;
+		}
+
+		static GridBagConstraints setGridPos(GridBagConstraints c, int gridx, int gridy) {
+			c.gridx = gridx;
+			c.gridy = gridy;
+			return c;
+		}
+
+		static GridBagConstraints setFill(GridBagConstraints c, GridFill fill) {
+			c.fill = fill==null?GridBagConstraints.NONE:fill.value;
+			return c;
+		}
+
+		@SuppressWarnings("unused")
+		static GridBagConstraints setInsets(GridBagConstraints c, int top, int left, int bottom, int right) {
+			c.insets = new Insets(top, left, bottom, right);
+			return c;
+		}
+
+		@SuppressWarnings("unused")
+		static GridBagConstraints setLineEnd(GridBagConstraints c) {
+			c.gridwidth = GridBagConstraints.REMAINDER;
+			return c;
+		}
+
+		@SuppressWarnings("unused")
+		static GridBagConstraints setLineMid(GridBagConstraints c) {
+			c.gridwidth = 1;
+			return c;
+		}
+
+		static GridBagConstraints setGridWidth(GridBagConstraints c, int gridwidth) {
+			c.gridwidth = gridwidth;
+			return c;
+		}
+	}
+	
 }
