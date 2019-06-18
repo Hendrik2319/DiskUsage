@@ -388,7 +388,6 @@ public class FileMap extends Canvas {
 
 			@Override
 			public void paintMapItem(MapItem mapItem, Graphics g, int x, int y, int width, int height) {
-				// TODO: MapItem color 
 				if (width<2 || height<2) return;
 				float cushionHeight = Math.min(width,height)*config.cushionHeightScale;
 				double xm = (width -1)*0.5;
