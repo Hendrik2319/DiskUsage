@@ -72,6 +72,7 @@ public class FileMap extends Canvas {
 
 	public void setRoot(DiskItem root) {
 		this.root = new MapItem(root);
+		currentPainter.forceUpdate();
 		repaint();
 	}
 
@@ -221,6 +222,7 @@ public class FileMap extends Canvas {
 		public boolean isConfigurable() { return false; }
 		public void showConfig(FileMap fileMap) {}
 		public void hideConfig() {}
+		public void forceUpdate() {}
 		
 		public abstract void paintAll(MapItem root, Graphics g, int x, int y, int width, int height);
 		public abstract void paintMapItem(MapItem mapItem, Graphics g, int x, int y, int width, int height);
@@ -294,6 +296,8 @@ public class FileMap extends Canvas {
 
 			private ConfigGUI configGUI = null;
 
+			private Color[][] tempColorMap;
+
 			CushionPainter() {
 				bumpMappingShading = new MaterialShading(config.sun, config.materialColor, 0, config.materialPhongExp);
 				bumpMapping = new BumpMapping(false);
@@ -321,18 +325,26 @@ public class FileMap extends Canvas {
 			}
 			
 			@Override
+			public void forceUpdate() {
+				imageCache.resetImage();
+				updateNormalMap = true;
+			}
+
+			@Override
 			public void paintAll(MapItem root, Graphics g, int x, int y, int width, int height) {
 				if (imageCache.getWidth()!=width || imageCache.getHeight()!=height || updateNormalMap) {
 					updateNormalMap = false;
 					tempHeightMap = new float[width][height];
+					tempColorMap  = new Color[width][height];
 					for (float[] column:tempHeightMap) Arrays.fill(column,0);
+					for (Color[] column:tempColorMap ) Arrays.fill(column,null);
 					xOffset = x;
 					yOffset = y;
 					layouter.layoutMapItem(root,null,x,y,width,height);
 					Normal[][] normalMap = new Normal[width][height];
-					for (int x1=0; x1<tempHeightMap.length; ++x1)
-						for (int y1=0; y1<tempHeightMap[x1].length; ++y1) {
-							Normal n = new Normal();
+					for (int x1=0; x1<width; ++x1)
+						for (int y1=0; y1<height; ++y1) {
+							Normal n = new Normal(0,0,0,tempColorMap[x1][y1]);
 							addNormal(n,computeNormal(x1,y1,+1, 0)); 
 							addNormal(n,computeNormal(x1,y1,-1, 0)); 
 							addNormal(n,computeNormal(x1,y1, 0,+1)); 
@@ -341,6 +353,7 @@ public class FileMap extends Canvas {
 						}
 					bumpMapping.setNormalMap(normalMap);
 					tempHeightMap = null;
+					tempColorMap  = null;
 				}
 				g.drawImage(imageCache.getImage(width,height), x, y, null);
 				drawSelected(root,g);
@@ -387,6 +400,7 @@ public class FileMap extends Canvas {
 					for (int y1=0; y1<height; ++y1) {
 						float hY = (float) ((Math.sqrt(1-(y1/ym-1)*(y1/ym-1)*sin2A2)-cosA2)/(1-cosA2));
 						tempHeightMap[x+x1-xOffset][y+y1-yOffset] += cushionHeight * hX * hY;
+						tempColorMap [x+x1-xOffset][y+y1-yOffset] = mapItem.diskItem.getColor();
 					}
 				}
 			}
