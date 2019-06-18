@@ -550,16 +550,12 @@ public class DiskUsage implements FileMap.GuiContext {
 	}
 	
 	enum DiskItemType {
-		mp4   ("MP4 Video"          , new Color(0x7F0000), "mp4"   ),
-		mpg   ("MPEG Video"         , new Color(0x7F0000), "mpg", "mpeg"),
-		wmv   ("Windows Media Video", new Color(0x00A4AE), "wmv"   ),
-		webm  ("WEBM WebVideo"      , new Color(0x005cae), "webm"  ),
-		ts    ("Transport Stream"   , new Color(0x0000ff), "ts"    ),
-		stream("Video Stream"       , new Color(0x89737b), "stream"),
-		vob   ("DVD Video"          , new Color(0xc73c00), "vob"),
-		eit   ("Record Description" , new Color(0x6868a3), "eit"   ),
-		png   ("PNG Image"          , new Color(0x565600), "png"   ),
-		jpg   ("JPEG Image"         , new Color(0x095600), "jpg", "jpeg"),
+		Video   ("Video"             , new Color(0x7F0000), "mp4","mpg","mpeg","wmv","webm","stream","vob"),
+		ts      ("Transport Stream"  , new Color(0xad3d00), "ts" ),
+		Audio   ("Audio"             , new Color(0x237f00), "wav","mp3","ac3"),
+		Archive ("Archive"           , new Color(0xff6d00), "zip","7z","tar.gz","tar","gz","rar","iso"),
+		Text    ("Text"              , new Color(0x6868a3), "eit", "txt"),
+		Image   ("Image"             , new Color(0x5656ff), "png","jpg", "jpeg"),
 		;
 		final Color color;
 		final String[] fileExtensions;
