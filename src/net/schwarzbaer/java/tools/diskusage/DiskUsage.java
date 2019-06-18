@@ -4,11 +4,15 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileFilter;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
@@ -27,18 +31,27 @@ import java.util.function.Function;
 
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
+import javax.swing.JButton;
 import javax.swing.JCheckBoxMenuItem;
+import javax.swing.JFileChooser;
 import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
+import javax.swing.JTextField;
 import javax.swing.JTree;
 import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
 import javax.swing.tree.DefaultTreeCellRenderer;
+import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 
+import net.schwarzbaer.gui.FileChooser;
+import net.schwarzbaer.gui.GUI;
+import net.schwarzbaer.gui.IconSource;
+import net.schwarzbaer.gui.IconSource.CachedIcons;
+import net.schwarzbaer.gui.ProgressDialog;
 import net.schwarzbaer.gui.StandardMainWindow;
 import net.schwarzbaer.image.BumpMapping.Normal;
 
@@ -51,7 +64,7 @@ public class DiskUsage implements FileMap.GuiContext {
 		catch (ClassNotFoundException | InstantiationException | IllegalAccessException | UnsupportedLookAndFeelException e) {}
 		
 		File file = new File("hdd.diskusage");
-		new DiskUsage().readConfig().readFile(file).createGUI();
+		new DiskUsage().readConfig().readStoredTree(file).createGUI();
 	}
 	
 	private DiskItem root;
@@ -60,10 +73,32 @@ public class DiskUsage implements FileMap.GuiContext {
 	private FileMap fileMap;
 	private ContextMenu treeViewContextMenu;
 	private DiskItem fileMapRoot;
-
+	private JTextField fileMapRootPathField;
+	private JTextField treeSourceField;
+	private File treeSource;
+	private CachedIcons<Icons32> icons32;
+	private FileChooser storedTreeChooser;
+	private JFileChooser folderChooser;
+	private StandardMainWindow mainWindow;
+	private DefaultTreeModel treeViewModel;
+	
+	enum Icons32 { OpenFolder, OpenStoredTree, SaveStoredTree }
+	
 	private void createGUI() {
+		GridBagConstraints c = new GridBagConstraints();
+		
+		IconSource<Icons32> icons32source = new IconSource<Icons32>(32,32);
+		icons32source.readIconsFromResource("/icons32.png");
+		icons32 = icons32source.cacheIcons(Icons32.values());
+		
+		storedTreeChooser = new FileChooser("Stored Tree", "diskusage");
+		folderChooser = new JFileChooser("./");
+		folderChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+		folderChooser.setMultiSelectionEnabled(false);
+		
 		rootTreeNode = new DiskItemTreeNode(root);
-		treeView = new JTree(rootTreeNode);
+		treeViewModel = new DefaultTreeModel(rootTreeNode);
+		treeView = new JTree(treeViewModel);
 		treeView.setCellRenderer(new MyTreeCellRenderer());
 		treeView.addMouseListener(new MyMouseListener());
 		treeView.addTreeSelectionListener(e -> {
@@ -77,24 +112,54 @@ public class DiskUsage implements FileMap.GuiContext {
 		});
 		treeViewContextMenu = new ContextMenu();
 		
+		JScrollPane treeScrollPane = new JScrollPane(treeView);
+		treeScrollPane.setPreferredSize(new Dimension(500,800));
+		
+		GBC.reset(c);
+		GBC.setFill(c, GBC.GridFill.BOTH);
+		JPanel treePanel = new JPanel(new GridBagLayout());
+		treePanel.setBorder(BorderFactory.createTitledBorder("Folder Structure"));
+		treePanel.add(treeSourceField = GUI.createOutputTextField(getTreeSourceLabel()),GBC.setWeights(c,1,0));
+		treePanel.add(createButton(Icons32.OpenFolder    ,"Select Folder"      ,new Insets(0,0,0,0),e->selectFolder  ()),GBC.setWeights(c,0,0));
+		treePanel.add(createButton(Icons32.OpenStoredTree,"Open Stored Tree"   ,new Insets(0,0,0,0),e->openStoredTree()),c);
+		treePanel.add(createButton(Icons32.SaveStoredTree,"Save as Stored Tree",new Insets(0,0,0,0),e->saveStoredTree()),GBC.setLineEnd(c));
+		treePanel.add(treeScrollPane,GBC.setWeights(c,1,1));
+		treeSourceField.setPreferredSize(new Dimension(30,30));
+		treeSourceField.setMinimumSize(new Dimension(30,30));
+		
+		
 		fileMapRoot = root;
 		fileMap = new FileMap(fileMapRoot,1000,800,this);
-		fileMap.setBorder(BorderFactory.createTitledBorder("File Map"));
 		fileMap.setPreferredSize(new Dimension(1000,800));
 		
-		JScrollPane treeScrollPane = new JScrollPane(treeView);
-		treeScrollPane.setBorder(BorderFactory.createTitledBorder("Folder Structure"));
-		treeScrollPane.setPreferredSize(new Dimension(500,800));
+		GBC.reset(c);
+		GBC.setLineEnd(c);
+		GBC.setFill(c, GBC.GridFill.BOTH);
+		JPanel fileMapPanel = new JPanel(new GridBagLayout());
+		fileMapPanel.setBorder(BorderFactory.createTitledBorder("File Map"));
+		fileMapPanel.add(fileMapRootPathField = GUI.createOutputTextField(fileMapRoot.getPathStr(true)),GBC.setWeights(c,1,0));
+		fileMapPanel.add(fileMap,GBC.setWeights(c,1,1));
+		fileMapRootPathField.setPreferredSize(new Dimension(30,30));
+		fileMapRootPathField.setMinimumSize(new Dimension(30,30));
 		
 		JPanel contentPane = new JPanel(new BorderLayout(3,3));
 		contentPane.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
-		contentPane.add(treeScrollPane,BorderLayout.WEST);
-		contentPane.add(fileMap,BorderLayout.CENTER);
+		contentPane.add(treePanel,BorderLayout.WEST);
+		contentPane.add(fileMapPanel,BorderLayout.CENTER);
 		
-		StandardMainWindow mainWindow = new StandardMainWindow("DiskUsage");
+		mainWindow = new StandardMainWindow("DiskUsage");
 		mainWindow.startGUI(contentPane);
 	}
-	
+
+	private JButton createButton(Icons32 icon, String toolTip, Insets margins, ActionListener al) {
+		JButton btn = new JButton();
+		if (margins!=null) btn.setMargin(margins);
+		btn.setToolTipText(toolTip);
+		btn.addActionListener(al);
+		btn.setIcon(icons32.getCachedIcon(icon));
+		return btn;
+	}
+
 	private class MyTreeCellRenderer extends DefaultTreeCellRenderer {
 		private static final long serialVersionUID = -833719497285747612L;
 
@@ -140,7 +205,7 @@ public class DiskUsage implements FileMap.GuiContext {
 			}
 		}
 	}
-	
+
 	private class ContextMenu extends JPopupMenu {
 		private static final long serialVersionUID = 4192144302244498205L;
 		private DiskItemTreeNode clickedTreeNode;
@@ -148,7 +213,7 @@ public class DiskUsage implements FileMap.GuiContext {
 		
 		ContextMenu() {
 			add(showInFileMap = createMenuItem("Show in File Map",e->{
-				fileMap.setRoot(fileMapRoot = clickedTreeNode.diskItem);
+				setFileMapRoot(clickedTreeNode.diskItem);
 				treeView.repaint();
 			}));
 //			createCheckBoxMenuItems(pst, Layouter.Type.values(), t->t.title, FileMap.this::setLayouter);
@@ -160,7 +225,7 @@ public class DiskUsage implements FileMap.GuiContext {
 		
 		public void show(Component invoker, int x, int y, DiskItemTreeNode clickedTreeNode) {
 			this.clickedTreeNode = clickedTreeNode;
-			showInFileMap.setEnabled(!this.clickedTreeNode.isLeaf());
+			showInFileMap.setEnabled(this.clickedTreeNode!=null && !this.clickedTreeNode.isLeaf());
 			show(invoker, x, y);
 		}
 		
@@ -214,7 +279,7 @@ public class DiskUsage implements FileMap.GuiContext {
 			System.out.print("Write Config ... ");
 			try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(CONFIG_FILE), StandardCharsets.UTF_8))) {
 				
-				FileMap.Painter.CushionPainter.Config config = FileMap.Painter.CushionPainter.config;
+				Painter.CushionPainter.Config config = Painter.CushionPainter.config;
 				out.println(HEADER_CUSHIONPAINTER);
 				out.printf(VALUE_CUSHIONPAINTER_SUN                 +"=%s%n",toString(config.sun               ));
 				out.printf(VALUE_CUSHIONPAINTER_SELECTED_FILE       +"=%s%n",toString(config.selectedFile      ));
@@ -240,7 +305,7 @@ public class DiskUsage implements FileMap.GuiContext {
 						
 						if (str.equals(HEADER_CUSHIONPAINTER)) currentConfigBlock = ConfigBlock.CushionPainter;
 						if (currentConfigBlock == ConfigBlock.CushionPainter) {
-							FileMap.Painter.CushionPainter.Config config = FileMap.Painter.CushionPainter.config;
+							Painter.CushionPainter.Config config = Painter.CushionPainter.config;
 							if (str.startsWith(VALUE_CUSHIONPAINTER_SUN                 +"=")) config.sun                = parseNormal( str.substring(VALUE_CUSHIONPAINTER_SUN                 .length()+1) );
 							if (str.startsWith(VALUE_CUSHIONPAINTER_SELECTED_FILE       +"=")) config.selectedFile       = parseColor ( str.substring(VALUE_CUSHIONPAINTER_SELECTED_FILE       .length()+1) );
 							if (str.startsWith(VALUE_CUSHIONPAINTER_SELECTED_FOLDER     +"=")) config.selectedFolder     = parseColor ( str.substring(VALUE_CUSHIONPAINTER_SELECTED_FOLDER     .length()+1) );
@@ -310,17 +375,80 @@ public class DiskUsage implements FileMap.GuiContext {
 	}
 
 
-	private DiskUsage readFile(File file) {
+	private String getTreeSourceLabel() {
+		if (treeSource==null) return "";
+		if (treeSource.isFile     ()) return "[StoredTree]  "+treeSource.getAbsolutePath();
+		if (treeSource.isDirectory()) return "[Folder]  "+treeSource.getAbsolutePath();
+		 return "[???]  "+treeSource.getAbsolutePath();
+	}
+
+	private void treeRootChanged() {
+		treeSourceField.setText(getTreeSourceLabel());
+		rootTreeNode = new DiskItemTreeNode(root);
+		treeViewModel.setRoot(rootTreeNode);
+		setFileMapRoot(root);
+	}
+
+	private void setFileMapRoot(DiskItem diskItem) {
+		fileMap.setRoot(fileMapRoot = diskItem);
+		fileMapRootPathField.setText(fileMapRoot.getPathStr(true));
+	}
+
+	private void selectFolder() {
+		if (folderChooser.showOpenDialog(mainWindow)==JFileChooser.APPROVE_OPTION) {
+			ProgressDialog.runWithProgressDialog(mainWindow, "Read Folder", 500, pd->{
+				pd.setTaskTitle("Read Folder");
+				pd.setIndeterminate(true);
+				readFolder(pd,folderChooser.getSelectedFile());
+			});
+			treeRootChanged();
+		}
+	}
+
+	private void openStoredTree() {
+		if (storedTreeChooser.showOpenDialog(mainWindow)==FileChooser.APPROVE_OPTION) {
+			ProgressDialog.runWithProgressDialog(mainWindow, "Read Stored Tree", 300, pd->{
+				pd.setTaskTitle("Read Stored Tree");
+				pd.setIndeterminate(true);
+				readStoredTree(storedTreeChooser.getSelectedFile());
+			});
+			treeRootChanged();
+		}
+	}
+
+	private void saveStoredTree() {
+		if (storedTreeChooser.showSaveDialog(mainWindow)==FileChooser.APPROVE_OPTION) {
+			ProgressDialog.runWithProgressDialog(mainWindow, "Write Stored Tree", 300, pd->{
+				pd.setTaskTitle("Write Stored Tree");
+				pd.setIndeterminate(true);
+				writeStoredTree(storedTreeChooser.getSelectedFile());
+			});
+		}
+	}
+
+	private void writeStoredTree(File file) {
+		try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8))) {
+			DiskItem.traverse(root,(DiskItem di)->{
+				if (di==root) return;
+				out.printf("%d\t%s%n", di.size_kB, di.getPathStr(false));
+			});
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		}
+	}
+
+	private DiskUsage readStoredTree(File file) {
 		root = null;
+		treeSource = file;
 		try (BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
 			root = new DiskItem();
 			String line;
 			while ( (line=in.readLine())!=null ) {
 				int pos = line.indexOf(0x9);
-				long size = Long.parseLong(line.substring(0,pos));
+				long size_kB = Long.parseLong(line.substring(0,pos));
 				String[] path = line.substring(pos+1).split("/");
 				DiskItem item = root.get(path);
-				item.size = size;
+				item.size_kB = size_kB;
 			}
 			
 		} catch (FileNotFoundException e) {
@@ -329,6 +457,23 @@ public class DiskUsage implements FileMap.GuiContext {
 			e.printStackTrace();
 		}
 		
+		determineFileTypes();
+		
+		return this;
+	}
+
+	private void readFolder(ProgressDialog pd, File folder) {
+		root = new DiskItem();
+		treeSource = folder;
+		DiskItem folderDI = root.addChild(folder);
+		folderDI.addChildren(pd,folder);
+		
+		pd.setTaskTitle("Determine File Types");
+		pd.setIndeterminate(true);
+		determineFileTypes();
+	}
+
+	private void determineFileTypes() {
 		DiskItem.traverse(root,di->{
 			if (di.children.isEmpty())
 				for (DiskItemType dit:DiskItemType.values())
@@ -338,8 +483,6 @@ public class DiskUsage implements FileMap.GuiContext {
 							return;
 						}
 		});
-		
-		return this;
 	}
 
 	private static class DiskItemTreeNode implements TreeNode {
@@ -381,7 +524,7 @@ public class DiskUsage implements FileMap.GuiContext {
 					.toArray(n->new DiskItemTreeNode[n]);
 			Arrays.sort(
 					children,
-					Comparator.<DiskItemTreeNode,DiskItem>comparing(ditn->ditn.diskItem,Comparator.<DiskItem,Long>comparing(di->di.size,Comparator.reverseOrder()).thenComparing(di->di.name))
+					Comparator.<DiskItemTreeNode,DiskItem>comparing(ditn->ditn.diskItem,Comparator.<DiskItem,Long>comparing(di->di.size_kB,Comparator.reverseOrder()).thenComparing(di->di.name))
 			);
 		}
 
@@ -432,7 +575,7 @@ public class DiskUsage implements FileMap.GuiContext {
 
 		final DiskItem parent;
 		final String name; 
-		long size = 0;
+		long size_kB = 0;
 		Vector<DiskItem> children;
 		DiskItemType type = null;
 
@@ -442,7 +585,6 @@ public class DiskUsage implements FileMap.GuiContext {
 			this.name = name;
 			children = new Vector<>();
 		}
-
 		public Color getColor() {
 			return type==null?null:type.color;
 		}
@@ -453,6 +595,13 @@ public class DiskUsage implements FileMap.GuiContext {
 			return parent.isChildOf(diskItem);
 		}
 		
+		public String getPathStr(boolean forGUI) {
+			if (parent == null) return forGUI?name:null;
+			String pathStr = parent.getPathStr(forGUI);
+			if (pathStr==null) return name;
+			return pathStr + (forGUI?"  >  ":"/") +name;
+		}
+		
 		@Override
 		public String toString() {
 			//return name + " (" + size + "kB)";
@@ -461,11 +610,11 @@ public class DiskUsage implements FileMap.GuiContext {
 		}
 		
 		public String getSizeStr() {
-			if (size<1024) return size+" kB";
+			if (size_kB<1024) return size_kB+" kB";
 			double sizeD;
-			sizeD = size/1024.0; if (sizeD<1024) return String.format(Locale.ENGLISH, "%1.2f MB", sizeD);
-			sizeD = sizeD/1024;  if (sizeD<1024) return String.format(Locale.ENGLISH, "%1.2f GB", sizeD);
-			sizeD = sizeD/1024;                  return String.format(Locale.ENGLISH, "%1.2f TB", sizeD);
+			sizeD = size_kB/1024.0; if (sizeD<1024) return String.format(Locale.ENGLISH, "%1.2f MB", sizeD);
+			sizeD = sizeD/1024;     if (sizeD<1024) return String.format(Locale.ENGLISH, "%1.2f GB", sizeD);
+			sizeD = sizeD/1024;                     return String.format(Locale.ENGLISH, "%1.2f TB", sizeD);
 		}
 		
 		public DiskItem get(String[] path) {
@@ -486,10 +635,106 @@ public class DiskUsage implements FileMap.GuiContext {
 			return child.getChild(path, i+1);
 		}
 		
+		public DiskItem addChild(File file) {
+			DiskItem child = new DiskItem(this,file.getName());
+			child.size_kB = (long) Math.ceil(file.length()/1024.0);
+			children.add(child);
+			return child;
+		}
+		public void addChildren(ProgressDialog pd, File folder) {
+			pd.setTaskTitle(folder.getAbsolutePath());
+			pd.setIndeterminate(true);
+			
+			File[] files = folder.listFiles((FileFilter) file -> {
+				if (file.isDirectory()) {
+					if (file.getName().equals(".")) return false;
+					if (file.getName().equals("..")) return false;
+				}
+				return true;
+			});
+			for (File file:files) {
+				DiskItem child = addChild(file);
+				if (file.isDirectory()) {
+					child.addChildren(pd,file);
+					pd.setTaskTitle(folder.getAbsolutePath());
+				}
+			}
+			size_kB += sumSizeOfChildren();
+		}
+		public long sumSizeOfChildren() {
+			long sum = 0;
+			for (DiskItem child:children)
+				sum += child.size_kB;
+			return sum;
+		}
 		public static void traverse(DiskItem di, Consumer<DiskItem> consumer) {
 			consumer.accept(di);
 			for (DiskItem child:di.children)
 				traverse(child, consumer);
+		}
+	}
+
+	static class GBC {
+		enum GridFill {
+			BOTH(GridBagConstraints.BOTH),
+			HORIZONTAL(GridBagConstraints.HORIZONTAL),
+			H(GridBagConstraints.HORIZONTAL),
+			VERTICAL(GridBagConstraints.VERTICAL),
+			V(GridBagConstraints.VERTICAL),
+			NONE(GridBagConstraints.NONE),
+			;
+			private int value;
+			GridFill(int value) {
+				this.value = value;
+				
+			}
+		}
+	
+		static void reset(GridBagConstraints c) {
+			c.gridx = GridBagConstraints.RELATIVE;
+			c.gridy = GridBagConstraints.RELATIVE;
+			c.weightx = 0;
+			c.weighty = 0;
+			c.fill = GridBagConstraints.NONE;
+			c.gridwidth = 1;
+			c.insets = new Insets(0,0,0,0);
+		}
+	
+		static GridBagConstraints setWeights(GridBagConstraints c, double weightx, double weighty) {
+			c.weightx = weightx;
+			c.weighty = weighty;
+			return c;
+		}
+	
+		static GridBagConstraints setGridPos(GridBagConstraints c, int gridx, int gridy) {
+			c.gridx = gridx;
+			c.gridy = gridy;
+			return c;
+		}
+	
+		static GridBagConstraints setFill(GridBagConstraints c, GridFill fill) {
+			c.fill = fill==null?GridBagConstraints.NONE:fill.value;
+			return c;
+		}
+	
+		static GridBagConstraints setInsets(GridBagConstraints c, int top, int left, int bottom, int right) {
+			c.insets = new Insets(top, left, bottom, right);
+			return c;
+		}
+	
+		static GridBagConstraints setLineEnd(GridBagConstraints c) {
+			c.gridwidth = GridBagConstraints.REMAINDER;
+			return c;
+		}
+	
+		static GridBagConstraints setLineMid(GridBagConstraints c) {
+			c.gridwidth = 1;
+			return c;
+		}
+	
+		static GridBagConstraints setGridWidth(GridBagConstraints c, int gridwidth) {
+			c.gridwidth = gridwidth;
+			return c;
 		}
 	}
 }
