@@ -50,6 +50,10 @@ public class FileMap extends Canvas {
 
 	public void setRoot(DiskItem root) {
 		this.root = root==null?null:new MapItem(root);
+		update();
+	}
+
+	public void update() {
 		currentPainter.forceUpdate();
 		repaint();
 	}

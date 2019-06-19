@@ -8,6 +8,7 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.Toolkit;
+import java.awt.Window;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionListener;
@@ -33,6 +34,7 @@ import java.util.Vector;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import javax.swing.AbstractCellEditor;
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
@@ -42,10 +44,16 @@ import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
+import javax.swing.JTable;
 import javax.swing.JTextField;
 import javax.swing.JTree;
+import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.TableCellEditor;
+import javax.swing.table.TableCellRenderer;
+import javax.swing.table.TableColumn;
 import javax.swing.tree.DefaultTreeCellRenderer;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
@@ -53,10 +61,16 @@ import javax.swing.tree.TreePath;
 
 import net.schwarzbaer.gui.FileChooser;
 import net.schwarzbaer.gui.GUI;
+import net.schwarzbaer.gui.HSColorChooser;
+import net.schwarzbaer.gui.HSColorChooser.ColorDialog;
 import net.schwarzbaer.gui.IconSource;
 import net.schwarzbaer.gui.IconSource.CachedIcons;
 import net.schwarzbaer.gui.ProgressDialog;
+import net.schwarzbaer.gui.StandardDialog;
 import net.schwarzbaer.gui.StandardMainWindow;
+import net.schwarzbaer.gui.Tables;
+import net.schwarzbaer.gui.Tables.LabelRendererComponent;
+import net.schwarzbaer.gui.Tables.SimplifiedColumnConfig;
 import net.schwarzbaer.image.BumpMapping.Normal;
 
 public class DiskUsage implements FileMap.GuiContext {
@@ -79,7 +93,7 @@ public class DiskUsage implements FileMap.GuiContext {
 	private TreePanel treePanel;
 	private FileMapPanel fileMapPanel;
 	
-	enum Icons32 { OpenFolder, OpenStoredTree, SaveStoredTree }
+	enum Icons32 { OpenFolder, OpenStoredTree, SaveStoredTree, EditTypes }
 	
 	private DiskUsage createGUI() {
 		IconSource<Icons32> icons32source = new IconSource<Icons32>(32,32);
@@ -119,6 +133,7 @@ public class DiskUsage implements FileMap.GuiContext {
 		private JTree treeView;
 		private DefaultTreeModel treeViewModel;
 		private ContextMenu treeViewContextMenu;
+		private DiskItemTypeDialog diskItemTypeDialog = null;
 		
 		TreePanel() {
 			super(new GridBagLayout());
@@ -150,7 +165,8 @@ public class DiskUsage implements FileMap.GuiContext {
 			add(treeSourceField = GUI.createOutputTextField(getTreeSourceLabel()),GBC.setWeights(c,1,0));
 			add(createButton(Icons32.OpenFolder    ,"Select Folder"      ,new Insets(0,0,0,0),e->selectFolder  ()),GBC.setWeights(c,0,0));
 			add(createButton(Icons32.OpenStoredTree,"Open Stored Tree"   ,new Insets(0,0,0,0),e->openStoredTree()),c);
-			add(createButton(Icons32.SaveStoredTree,"Save as Stored Tree",new Insets(0,0,0,0),e->saveStoredTree()),GBC.setLineEnd(c));
+			add(createButton(Icons32.SaveStoredTree,"Save as Stored Tree",new Insets(0,0,0,0),e->saveStoredTree()),c);
+			add(createButton(Icons32.EditTypes     ,"Edit File Types"    ,new Insets(0,0,0,0),e->editFileTypes ()),GBC.setLineEnd(c));
 			add(treeScrollPane,GBC.setWeights(c,1,1));
 			treeSourceField.setPreferredSize(new Dimension(30,30));
 			treeSourceField.setMinimumSize(new Dimension(30,30));
@@ -281,6 +297,16 @@ public class DiskUsage implements FileMap.GuiContext {
 			treeView.setSelectionPath(treePath);
 			treeView.scrollPathToVisible(treePath);
 		}
+
+		public void editFileTypes() {
+			if (diskItemTypeDialog==null)
+				diskItemTypeDialog = new DiskItemTypeDialog(mainWindow, "Edit File Types", true);
+			diskItemTypeDialog.showDialog();
+			DiskItemType.setTypes(root);
+			treeView.repaint();
+			fileMapPanel.fileMap.update();
+			saveConfig();
+		}
 	}
 
 	private class FileMapPanel extends JPanel {
@@ -324,6 +350,215 @@ public class DiskUsage implements FileMap.GuiContext {
 				setFileMapRoot(root);
 		}
 	}
+	
+	static class DiskItemTypeDialog extends StandardDialog {
+		private static final long serialVersionUID = 3019855581662554862L;
+
+		public DiskItemTypeDialog(Window parent, String title, boolean repeatedUseOfDialogObject) {
+			super(parent, title, ModalityType.APPLICATION_MODAL, repeatedUseOfDialogObject );
+			
+			DiskItemTypeTableModel tableModel = new DiskItemTypeTableModel();
+			JTable table = new JTable(tableModel);
+			tableModel.setColumnWidths(table);
+			
+			ColorCellRendererEditor renderer = new ColorCellRendererEditor();
+			table.setDefaultRenderer(Color.class, renderer);
+			table.setDefaultEditor(Color.class, renderer);
+			
+			TableColumn column = table.getColumnModel().getColumn(table.convertColumnIndexToView(tableModel.getColumn(ColumnID.Label)));
+			column.setCellRenderer(new LabelCellRenderer());
+			
+			JScrollPane tableScrollPane = new JScrollPane(table);
+			tableScrollPane.setPreferredSize(new Dimension(tableModel.getSumOfColumnWidths()+20, (DiskItemType.types.size()+1)*table.getRowHeight()+60));
+			
+			JPanel contentPane = new JPanel(new BorderLayout(3,3));
+			contentPane.setBorder(BorderFactory.createEmptyBorder(5,5,5,5));
+			contentPane.add(tableScrollPane,BorderLayout.CENTER);
+			createGUI(contentPane);
+		}
+		
+		private static class LabelCellRenderer extends DefaultTableCellRenderer {
+			private static final long serialVersionUID = 2954177515113317104L;
+
+			@Override
+			public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+				Component component = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+				if (value==null) {
+					if (!isSelected) setForeground(Color.GRAY);
+					setText("Add New Type");
+				} else if (!isSelected) 
+					setForeground(Color.BLACK);
+				return component;
+			}
+			
+		}
+		
+		private class ColorCellRendererEditor extends AbstractCellEditor implements TableCellRenderer, TableCellEditor {
+			private static final long serialVersionUID = 2734834827009184692L;
+			
+			private LabelRendererComponent renderComp;
+			private ColorDialog colorDialog;
+			private Color oldColor;
+			private Color newColor;
+			private boolean editingCanceled;
+
+			ColorCellRendererEditor() {
+				renderComp = new Tables.LabelRendererComponent();
+				colorDialog = null;
+				editingCanceled = false;
+				newColor = null;
+				oldColor = null;
+			}
+
+			@Override
+			public Object getCellEditorValue() {
+				return newColor;
+			}
+
+			@Override
+			public boolean stopCellEditing() {
+				if (colorDialog!=null) {
+					editingCanceled = false;
+					colorDialog.closeDialog();
+				} else {
+					fireEditingStopped();
+				}
+				return true;
+			}
+
+			@Override
+			public void cancelCellEditing() {
+				if (colorDialog!=null) {
+					editingCanceled = true;
+					colorDialog.closeDialog();
+				} else {
+					fireEditingCanceled();
+				}
+			}
+
+			@Override
+			protected void fireEditingStopped() {
+				System.out.println("fireEditingStopped");
+				super.fireEditingStopped();
+			}
+
+			@Override
+			protected void fireEditingCanceled() {
+				System.out.println("fireEditingCanceled");
+				super.fireEditingCanceled();
+			}
+
+			@Override
+			public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected, int row, int column) {
+				setColor(table, value, isSelected);
+				if (value instanceof Color) {
+					oldColor = (Color) value;
+					newColor = oldColor;
+					colorDialog = new HSColorChooser.ColorDialog(DiskItemTypeDialog.this, "Select Color", newColor);
+					SwingUtilities.invokeLater(()->{
+						editingCanceled = false;
+						colorDialog.showDialog();
+						newColor = colorDialog.getColor();
+						colorDialog=null;
+						if (editingCanceled || newColor==null) {
+							newColor = oldColor;
+							fireEditingCanceled();;
+						} else {
+							fireEditingStopped();
+						}
+					});
+				}
+				return renderComp;
+			}
+
+			@Override
+			public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+				setColor(table, value, isSelected);
+				return renderComp;
+			}
+
+			private void setColor(JTable table, Object value, boolean isSelected) {
+				if (value instanceof Color) {
+					renderComp.setOpaque(true);
+					renderComp.setBackground((Color) value);
+				} else if (isSelected) {
+					renderComp.setOpaque(true);
+					renderComp.setBackground(table.getSelectionBackground());
+				} else {
+					renderComp.setOpaque(false);
+					renderComp.setBackground(null);
+				}
+			}
+			
+		}
+		
+		enum ColumnID implements Tables.SimplifiedColumnIDInterface {
+			Label("Label"                  ,String.class, 30, 200),
+			Color("Color"                  , Color.class, 30,  50),
+			Ext  ("List of File Extensions",String.class, 30, 500),
+			;
+			
+			private SimplifiedColumnConfig cfg;
+			ColumnID(String name, Class<?> columnClass, int minWidth, int width) {
+				cfg = new SimplifiedColumnConfig(name, columnClass, minWidth, -1, width, width);
+			}
+			@Override public SimplifiedColumnConfig getColumnConfig() { return cfg; }
+			
+		}
+		private class DiskItemTypeTableModel extends Tables.SimplifiedTableModel<ColumnID> {
+
+			protected DiskItemTypeTableModel() {
+				super(ColumnID.values());
+			}
+
+			public int getSumOfColumnWidths() {
+				int sum = 0;
+				for (ColumnID id:ColumnID.values())
+					sum += id.cfg.currentWidth;
+				return sum;
+			}
+
+			@Override
+			public int getRowCount() {
+				return DiskItemType.types.size()+1;
+			}
+
+			@Override
+			protected boolean isCellEditable(int rowIndex, int columnIndex, ColumnID columnID) {
+				if (rowIndex<DiskItemType.types.size()) return true;
+				return columnID==ColumnID.Label;
+			}
+
+			@Override
+			public Object getValueAt(int rowIndex, int columnIndex, ColumnID columnID) {
+				if (rowIndex<DiskItemType.types.size()) {
+					DiskItemType diskItemType = DiskItemType.types.get(rowIndex);
+					switch (columnID) {
+					case Label: return diskItemType.label;
+					case Color: return diskItemType.color;
+					case Ext  : return DiskItemType.toString(diskItemType.fileExtensions);
+					}
+				}
+				return null;
+			}
+
+			@Override
+			protected void setValueAt(Object aValue, int rowIndex, int columnIndex, ColumnID columnID) {
+				DiskItemType diskItemType;
+				if (rowIndex<DiskItemType.types.size()) {
+					diskItemType = DiskItemType.types.get(rowIndex);
+				} else {
+					DiskItemType.types.add(diskItemType = new DiskItemType("", Color.GRAY));
+					fireTableRowAdded(DiskItemType.types.size()-1);
+				}
+				switch (columnID) {
+				case Label: diskItemType.label = (String)aValue; break;
+				case Color: diskItemType.color = (Color)aValue; break;
+				case Ext  : diskItemType.fileExtensions = DiskItemType.toStrArray((String)aValue); break;
+				}
+			}
+		}
+	}
 
 	@Override
 	public void copyPathToClipBoard(DiskItem diskItem) {
@@ -364,11 +599,25 @@ public class DiskUsage implements FileMap.GuiContext {
 		private static final String VALUE_CUSHIONPAINTER_CUSHION_HEIGHT_SCALE = "cushionHeightScale";
 		private static final String VALUE_CUSHIONPAINTER_AUTOMATIC_SAVING = "automaticSaving";
 		
-		enum ConfigBlock { CushionPainter }
+		private static final String HEADER_DISKITEMTYPE = "[FileType]";
+		private static final String VALUE_DISKITEMTYPE_LABEL          = "label";
+		private static final String VALUE_DISKITEMTYPE_COLOR          = "color";
+		private static final String VALUE_DISKITEMTYPE_FILEEXTENSIONS = "extensions";
+		
+		enum ConfigBlock { CushionPainter, DiskItemType }
 		
 		public static void saveConfig() {
 			System.out.print("Write Config ... ");
 			try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(CONFIG_FILE), StandardCharsets.UTF_8))) {
+				
+				
+				for (DiskItemType type:DiskItemType.types) {
+					out.println(HEADER_DISKITEMTYPE);
+					out.printf(VALUE_DISKITEMTYPE_LABEL         +"=%s%n",type.label);
+					out.printf(VALUE_DISKITEMTYPE_COLOR         +"=%s%n",toString(type.color));
+					out.printf(VALUE_DISKITEMTYPE_FILEEXTENSIONS+"=%s%n",DiskItemType.toString(type.fileExtensions));
+					out.println();
+				}
 				
 				Painter.CushionPainter.Config config = Painter.CushionPainter.config;
 				out.println(HEADER_CUSHIONPAINTER);
@@ -389,10 +638,28 @@ public class DiskUsage implements FileMap.GuiContext {
 		public static void readConfig() {
 			System.out.print("Read Config ... ");
 			ConfigBlock currentConfigBlock = null;
+			DiskItemType type = null;
+			boolean isFirstDiskItemType = true;
 			try (BufferedReader in=new BufferedReader(new InputStreamReader(new FileInputStream(CONFIG_FILE), StandardCharsets.UTF_8))) {
 				String str; int lineCount = 0;
 				while ( (str=in.readLine())!=null ) {
 					try {
+						
+						if (str.equals(HEADER_DISKITEMTYPE)) {
+							currentConfigBlock = ConfigBlock.DiskItemType;
+							if (isFirstDiskItemType) {
+								DiskItemType.types.clear();
+								isFirstDiskItemType = false;
+							}
+							type = new DiskItemType("", Color.GRAY);
+							DiskItemType.types.add(type);
+						}
+						if (currentConfigBlock == ConfigBlock.DiskItemType) {
+							if (str.startsWith(VALUE_DISKITEMTYPE_LABEL         +"=")) type.label          =                          str.substring(VALUE_DISKITEMTYPE_LABEL         .length()+1)  ;
+							if (str.startsWith(VALUE_DISKITEMTYPE_COLOR         +"=")) type.color          = parseColor             ( str.substring(VALUE_DISKITEMTYPE_COLOR         .length()+1) );
+							if (str.startsWith(VALUE_DISKITEMTYPE_FILEEXTENSIONS+"=")) type.fileExtensions = DiskItemType.toStrArray( str.substring(VALUE_DISKITEMTYPE_FILEEXTENSIONS.length()+1) );
+							if (str.isEmpty()) { currentConfigBlock = null; type = null; }
+						}
 						
 						if (str.equals(HEADER_CUSHIONPAINTER)) currentConfigBlock = ConfigBlock.CushionPainter;
 						if (currentConfigBlock == ConfigBlock.CushionPainter) {
@@ -405,6 +672,7 @@ public class DiskUsage implements FileMap.GuiContext {
 							if (str.startsWith(VALUE_CUSHIONPAINTER_CUSHIONESS          +"=")) config.alpha              = parseDouble( str.substring(VALUE_CUSHIONPAINTER_CUSHIONESS          .length()+1) );
 							if (str.startsWith(VALUE_CUSHIONPAINTER_CUSHION_HEIGHT_SCALE+"=")) config.cushionHeightScale = parseFloat ( str.substring(VALUE_CUSHIONPAINTER_CUSHION_HEIGHT_SCALE.length()+1) );
 							if (str.startsWith(VALUE_CUSHIONPAINTER_AUTOMATIC_SAVING    +"=")) config.automaticSaving    = parseBool  ( str.substring(VALUE_CUSHIONPAINTER_AUTOMATIC_SAVING    .length()+1) );
+							if (str.isEmpty()) currentConfigBlock = null;
 						}
 						
 					} catch (ParseException e) {
@@ -641,9 +909,28 @@ public class DiskUsage implements FileMap.GuiContext {
 				});
 		}
 
-		final Color color;
-		final String[] fileExtensions;
-		final String label;
+		public static String toString(String[] strs) {
+			String result = "";
+			for (String str:strs) {
+				if (!result.isEmpty()) result+=", ";
+				result+=str;
+			}
+			return result;
+		}
+
+		public static String[] toStrArray(String strs) {
+			if (strs.isEmpty()) return new String[0];
+			return Arrays
+					.asList(strs.split(","))
+					.stream()
+					.map(str->str.trim())
+					.filter(str->!str.isEmpty())
+					.toArray(n->new String[n]);
+		}
+
+		String label;
+		Color color;
+		String[] fileExtensions;
 		DiskItemType(String label, Color color, String... fileExtensions) {
 			this.label = label;
 			this.color = color;
