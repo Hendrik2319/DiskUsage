@@ -23,6 +23,8 @@ public class FileMap extends Canvas {
 	private static final long serialVersionUID = -41169096975888890L;
 	
 	interface GuiContext {
+		void copyPathToClipBoard(DiskItem diskItem);
+		boolean copyToClipBoard(String str);
 		void expandPathInTree(DiskItem diskItem);
 		void saveConfig();
 	}
@@ -36,7 +38,7 @@ public class FileMap extends Canvas {
 
 	public FileMap(DiskItem root, int width, int height, GuiContext guiContext) {
 		this.guiContext = guiContext;
-		this.root = new MapItem(root);
+		this.root = root==null?null:new MapItem(root);
 		Painter .Type pt = Painter .Type.CushionPainter;
 		Layouter.Type lt = Layouter.Type.GroupLayouter;
 		currentPainter  = pt.createPainter .get();
@@ -47,13 +49,14 @@ public class FileMap extends Canvas {
 	}
 
 	public void setRoot(DiskItem root) {
-		this.root = new MapItem(root);
+		this.root = root==null?null:new MapItem(root);
 		currentPainter.forceUpdate();
 		repaint();
 	}
 
 	public void setSelected(DiskItem diskItem) {
-		setSelected(root.find(diskItem));
+		if (root!=null)
+			setSelected(root.find(diskItem));
 	}
 	private void setSelected(MapItem mapItem) {
 		if (selectedMapItem!=null) selectedMapItem.setSelected(false);
@@ -77,7 +80,8 @@ public class FileMap extends Canvas {
 
 	@Override
 	protected void paintCanvas(Graphics g, int x, int y, int width, int height) {
-		currentPainter.paintAll(root,g,x,y,width,height);
+		if (root!=null)
+			currentPainter.paintAll(root,g,x,y,width,height);
 	}
 
 	private class MyMouseListener implements MouseListener {
@@ -87,12 +91,13 @@ public class FileMap extends Canvas {
 		@Override public void mouseEntered (MouseEvent e) {}
 		@Override public void mouseExited  (MouseEvent e) {}
 		@Override public void mouseClicked (MouseEvent e) {
+			MapItem clickedMapItem = root==null?null:root.getMapItemAt(e.getX(), e.getY());
 			
 			if (e.getButton()==MouseEvent.BUTTON3)
-				contextMenu.show(FileMap.this, e.getX(), e.getY());
+				contextMenu.show(FileMap.this, clickedMapItem, e.getX(), e.getY());
 			
 			if (e.getButton()==MouseEvent.BUTTON1) {
-				setSelected(root.getMapItemAt(e.getX(), e.getY()));
+				setSelected(clickedMapItem);
 				if (selectedMapItem!=null) guiContext.expandPathInTree(selectedMapItem.diskItem);
 			}
 		}
@@ -100,10 +105,18 @@ public class FileMap extends Canvas {
 	
 	private class ContextMenu extends JPopupMenu {
 		private static final long serialVersionUID = 5839108151130675728L;
+		
+		private MapItem clickedMapItem;
 		private JMenuItem configureLayouter;
 		private JMenuItem configurePainter;
+		private JMenuItem copyPath;
 		
 		ContextMenu(Painter.Type pt, Layouter.Type pst) {
+			add(copyPath = createMenuItem("Copy Path",e->{
+				if (clickedMapItem==null) return; 
+				guiContext.copyPathToClipBoard(clickedMapItem.diskItem);
+			}));
+			addSeparator();
 			createCheckBoxMenuItems(pst, Layouter.Type.values(), t->t.title, FileMap.this::setLayouter);
 			add(configureLayouter = createMenuItem("Configure Layouter ...",e->currentLayouter.showConfig(FileMap.this)));
 			addSeparator();
@@ -126,10 +139,11 @@ public class FileMap extends Canvas {
 			comp.addActionListener(al);
 			return comp;
 		}
-		@Override
-		public void show(Component invoker, int x, int y) {
+		public void show(Component invoker, MapItem clickedMapItem, int x, int y) {
+			this.clickedMapItem = clickedMapItem;
 			configureLayouter.setEnabled(currentLayouter!=null && currentLayouter.isConfigurable());
 			configurePainter .setEnabled(currentPainter !=null && currentPainter .isConfigurable());
+			copyPath.setEnabled(this.clickedMapItem!=null);
 			super.show(invoker, x, y);
 		}
 		

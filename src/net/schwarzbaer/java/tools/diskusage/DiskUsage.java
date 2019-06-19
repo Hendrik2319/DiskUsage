@@ -7,6 +7,9 @@ import java.awt.Dimension;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.Toolkit;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
@@ -25,6 +28,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.Locale;
+import java.util.Properties;
 import java.util.Vector;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -64,29 +68,20 @@ public class DiskUsage implements FileMap.GuiContext {
 		catch (ClassNotFoundException | InstantiationException | IllegalAccessException | UnsupportedLookAndFeelException e) {}
 		
 		File file = new File("hdd.diskusage");
-		new DiskUsage().readConfig().readStoredTree(file).createGUI();
+		new DiskUsage().readConfig().createGUI().openStoredTree(file);
 	}
 	
 	private DiskItem root;
-	private DiskItemTreeNode rootTreeNode;
-	private JTree treeView;
-	private FileMap fileMap;
-	private ContextMenu treeViewContextMenu;
-	private DiskItem fileMapRoot;
-	private JTextField fileMapRootPathField;
-	private JTextField treeSourceField;
-	private File treeSource;
 	private CachedIcons<Icons32> icons32;
 	private FileChooser storedTreeChooser;
 	private JFileChooser folderChooser;
 	private StandardMainWindow mainWindow;
-	private DefaultTreeModel treeViewModel;
+	private TreePanel treePanel;
+	private FileMapPanel fileMapPanel;
 	
 	enum Icons32 { OpenFolder, OpenStoredTree, SaveStoredTree }
 	
-	private void createGUI() {
-		GridBagConstraints c = new GridBagConstraints();
-		
+	private DiskUsage createGUI() {
 		IconSource<Icons32> icons32source = new IconSource<Icons32>(32,32);
 		icons32source.readIconsFromResource("/icons32.png");
 		icons32 = icons32source.cacheIcons(Icons32.values());
@@ -96,51 +91,9 @@ public class DiskUsage implements FileMap.GuiContext {
 		folderChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
 		folderChooser.setMultiSelectionEnabled(false);
 		
-		rootTreeNode = new DiskItemTreeNode(root);
-		treeViewModel = new DefaultTreeModel(rootTreeNode);
-		treeView = new JTree(treeViewModel);
-		treeView.setCellRenderer(new MyTreeCellRenderer());
-		treeView.addMouseListener(new MyMouseListener());
-		treeView.addTreeSelectionListener(e -> {
-			TreePath treePath = treeView.getSelectionPath();
-			if (treePath==null) return;
-			Object object = treePath.getLastPathComponent();
-			if (object instanceof DiskItemTreeNode) {
-				DiskItemTreeNode treeNode = (DiskItemTreeNode) object;
-				fileMap.setSelected(treeNode.diskItem);
-			}
-		});
-		treeViewContextMenu = new ContextMenu();
+		treePanel = new TreePanel();
+		fileMapPanel = new FileMapPanel();
 		
-		JScrollPane treeScrollPane = new JScrollPane(treeView);
-		treeScrollPane.setPreferredSize(new Dimension(500,800));
-		
-		GBC.reset(c);
-		GBC.setFill(c, GBC.GridFill.BOTH);
-		JPanel treePanel = new JPanel(new GridBagLayout());
-		treePanel.setBorder(BorderFactory.createTitledBorder("Folder Structure"));
-		treePanel.add(treeSourceField = GUI.createOutputTextField(getTreeSourceLabel()),GBC.setWeights(c,1,0));
-		treePanel.add(createButton(Icons32.OpenFolder    ,"Select Folder"      ,new Insets(0,0,0,0),e->selectFolder  ()),GBC.setWeights(c,0,0));
-		treePanel.add(createButton(Icons32.OpenStoredTree,"Open Stored Tree"   ,new Insets(0,0,0,0),e->openStoredTree()),c);
-		treePanel.add(createButton(Icons32.SaveStoredTree,"Save as Stored Tree",new Insets(0,0,0,0),e->saveStoredTree()),GBC.setLineEnd(c));
-		treePanel.add(treeScrollPane,GBC.setWeights(c,1,1));
-		treeSourceField.setPreferredSize(new Dimension(30,30));
-		treeSourceField.setMinimumSize(new Dimension(30,30));
-		
-		
-		fileMapRoot = root;
-		fileMap = new FileMap(fileMapRoot,1000,800,this);
-		fileMap.setPreferredSize(new Dimension(1000,800));
-		
-		GBC.reset(c);
-		GBC.setLineEnd(c);
-		GBC.setFill(c, GBC.GridFill.BOTH);
-		JPanel fileMapPanel = new JPanel(new GridBagLayout());
-		fileMapPanel.setBorder(BorderFactory.createTitledBorder("File Map"));
-		fileMapPanel.add(fileMapRootPathField = GUI.createOutputTextField(fileMapRoot.getPathStr(true)),GBC.setWeights(c,1,0));
-		fileMapPanel.add(fileMap,GBC.setWeights(c,1,1));
-		fileMapRootPathField.setPreferredSize(new Dimension(30,30));
-		fileMapRootPathField.setMinimumSize(new Dimension(30,30));
 		
 		JPanel contentPane = new JPanel(new BorderLayout(3,3));
 		contentPane.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
@@ -149,114 +102,252 @@ public class DiskUsage implements FileMap.GuiContext {
 		
 		mainWindow = new StandardMainWindow("DiskUsage");
 		mainWindow.startGUI(contentPane);
+		
+		treePanel.rootChanged(null);
+		fileMapPanel.rootChanged();
+		
+		return this;
 	}
 
-	private JButton createButton(Icons32 icon, String toolTip, Insets margins, ActionListener al) {
-		JButton btn = new JButton();
-		if (margins!=null) btn.setMargin(margins);
-		btn.setToolTipText(toolTip);
-		btn.addActionListener(al);
-		btn.setIcon(icons32.getCachedIcon(icon));
-		return btn;
-	}
-
-	private class MyTreeCellRenderer extends DefaultTreeCellRenderer {
-		private static final long serialVersionUID = -833719497285747612L;
-
-		@Override
-		public Component getTreeCellRendererComponent(JTree tree, Object value, boolean isSelected, boolean isExpanded, boolean isLeaf, int row, boolean hasFocus) {
-			Component component = super.getTreeCellRendererComponent(tree, value, isSelected, isExpanded, isLeaf, row, hasFocus);
-			if (value instanceof DiskItemTreeNode && !isSelected) {
-				DiskItemTreeNode treeNode = (DiskItemTreeNode) value;
-				if (treeNode.diskItem==fileMapRoot)
-					component.setForeground(Color.BLUE);
-				else if (treeNode.diskItem.isChildOf(fileMapRoot)) {
-					Color color = treeNode.diskItem.getColor();
-					component.setForeground(color==null?Color.BLACK:color);
-				} else
-					component.setForeground(Color.GRAY);
-			}
-			return component;
-		}
-	}
-
-	private class MyMouseListener implements MouseListener {
-
-		@Override public void mousePressed (MouseEvent e) {}
-		@Override public void mouseReleased(MouseEvent e) {}
-		@Override public void mouseEntered (MouseEvent e) {}
-		@Override public void mouseExited  (MouseEvent e) {}
-		@Override public void mouseClicked (MouseEvent e) {
-			TreePath clickedTreePath = treeView.getPathForLocation(e.getX(),e.getY());
-			DiskItemTreeNode clickedTreeNode = null;
-			if (clickedTreePath!=null) {
-				Object comp = clickedTreePath.getLastPathComponent();
-				if (comp instanceof DiskItemTreeNode)
-					clickedTreeNode = (DiskItemTreeNode) comp;
-			}
+	private class TreePanel extends JPanel {
+		private static final long serialVersionUID = 4456876243723688978L;
+		
+		private File treeSource;
+		private DiskItemTreeNode rootTreeNode;
+		
+		private JTextField treeSourceField;
+		private JTree treeView;
+		private DefaultTreeModel treeViewModel;
+		private ContextMenu treeViewContextMenu;
+		
+		TreePanel() {
+			super(new GridBagLayout());
+			GridBagConstraints c = new GridBagConstraints();
 			
-			if (e.getButton()==MouseEvent.BUTTON3) {
-				treeViewContextMenu.show(treeView, e.getX(), e.getY(), clickedTreeNode);
-			}
+			treeSource = null;
+			rootTreeNode = null;
+			treeViewModel = new DefaultTreeModel(rootTreeNode);
+			treeView = new JTree(treeViewModel);
+			treeView.setRootVisible(false);
+			treeView.setCellRenderer(new MyTreeCellRenderer());
+			treeView.addMouseListener(new MyMouseListener());
+			treeView.addTreeSelectionListener(e -> {
+				TreePath treePath = treeView.getSelectionPath();
+				if (treePath==null) return;
+				Object object = treePath.getLastPathComponent();
+				if (object instanceof DiskItemTreeNode) {
+					DiskItemTreeNode treeNode = (DiskItemTreeNode) object;
+					fileMapPanel.fileMap.setSelected(treeNode.diskItem);
+				}
+			});
+			treeViewContextMenu = new ContextMenu();
 			
-			if (e.getButton()==MouseEvent.BUTTON1) {
-				//setSelected(root.getMapItemAt(e.getX(), e.getY()));
-				//if (selectedMapItem!=null) guiContext.expandPathInTree(selectedMapItem.diskItem);
+			JScrollPane treeScrollPane = new JScrollPane(treeView);
+			treeScrollPane.setPreferredSize(new Dimension(500,800));
+			
+			GBC.setFill(c, GBC.GridFill.BOTH);
+			setBorder(BorderFactory.createTitledBorder("Folder Structure"));
+			add(treeSourceField = GUI.createOutputTextField(getTreeSourceLabel()),GBC.setWeights(c,1,0));
+			add(createButton(Icons32.OpenFolder    ,"Select Folder"      ,new Insets(0,0,0,0),e->selectFolder  ()),GBC.setWeights(c,0,0));
+			add(createButton(Icons32.OpenStoredTree,"Open Stored Tree"   ,new Insets(0,0,0,0),e->openStoredTree()),c);
+			add(createButton(Icons32.SaveStoredTree,"Save as Stored Tree",new Insets(0,0,0,0),e->saveStoredTree()),GBC.setLineEnd(c));
+			add(treeScrollPane,GBC.setWeights(c,1,1));
+			treeSourceField.setPreferredSize(new Dimension(30,30));
+			treeSourceField.setMinimumSize(new Dimension(30,30));
+			
+		}
+		
+		public void rootChanged(File treeSource) {
+			this.treeSource = treeSource;
+			treeSourceField.setText(getTreeSourceLabel());
+			rootTreeNode = root==null?null:new DiskItemTreeNode(root);
+			treeViewModel.setRoot(rootTreeNode);
+		}
+
+		private String getTreeSourceLabel() {
+			if (treeSource==null) return "";
+			if (treeSource.isFile     ()) return "[StoredTree]  "+treeSource.getAbsolutePath();
+			if (treeSource.isDirectory()) return "[Folder]  "+treeSource.getAbsolutePath();
+			 return "[???]  "+treeSource.getAbsolutePath();
+		}
+
+		private JButton createButton(Icons32 icon, String toolTip, Insets margins, ActionListener al) {
+			JButton btn = new JButton();
+			if (margins!=null) btn.setMargin(margins);
+			btn.setToolTipText(toolTip);
+			btn.addActionListener(al);
+			btn.setIcon(icons32.getCachedIcon(icon));
+			return btn;
+		}
+
+		private class MyTreeCellRenderer extends DefaultTreeCellRenderer {
+			private static final long serialVersionUID = -833719497285747612L;
+		
+			@Override
+			public Component getTreeCellRendererComponent(JTree tree, Object value, boolean isSelected, boolean isExpanded, boolean isLeaf, int row, boolean hasFocus) {
+				Component component = super.getTreeCellRendererComponent(tree, value, isSelected, isExpanded, isLeaf, row, hasFocus);
+				if (value instanceof DiskItemTreeNode && !isSelected) {
+					DiskItemTreeNode treeNode = (DiskItemTreeNode) value;
+					if (treeNode.diskItem==fileMapPanel.fileMapRoot)
+						component.setForeground(Color.BLUE);
+					else if (treeNode.diskItem.isChildOf(fileMapPanel.fileMapRoot)) {
+						Color color = treeNode.diskItem.getColor();
+						component.setForeground(color==null?Color.BLACK:color);
+					} else
+						component.setForeground(Color.GRAY);
+				}
+				return component;
 			}
+		}
+
+		private class MyMouseListener implements MouseListener {
+		
+			@Override public void mousePressed (MouseEvent e) {}
+			@Override public void mouseReleased(MouseEvent e) {}
+			@Override public void mouseEntered (MouseEvent e) {}
+			@Override public void mouseExited  (MouseEvent e) {}
+			@Override public void mouseClicked (MouseEvent e) {
+				TreePath clickedTreePath = treeView.getPathForLocation(e.getX(),e.getY());
+				DiskItemTreeNode clickedTreeNode = null;
+				if (clickedTreePath!=null) {
+					Object comp = clickedTreePath.getLastPathComponent();
+					if (comp instanceof DiskItemTreeNode)
+						clickedTreeNode = (DiskItemTreeNode) comp;
+				}
+				
+				if (e.getButton()==MouseEvent.BUTTON3) {
+					treeViewContextMenu.show(treeView, e.getX(), e.getY(), clickedTreeNode);
+				}
+				
+				if (e.getButton()==MouseEvent.BUTTON1) {
+					//setSelected(root.getMapItemAt(e.getX(), e.getY()));
+					//if (selectedMapItem!=null) guiContext.expandPathInTree(selectedMapItem.diskItem);
+				}
+			}
+		}
+
+		private class ContextMenu extends JPopupMenu {
+				private static final long serialVersionUID = 4192144302244498205L;
+				private DiskItemTreeNode clickedTreeNode;
+				private JMenuItem showInFileMap;
+				private JMenuItem copyPath;
+				
+				ContextMenu() {
+					add(showInFileMap = createMenuItem("Show in File Map",e->{
+						fileMapPanel.setFileMapRoot(clickedTreeNode.diskItem);
+						treeView.repaint();
+					}));
+					add(copyPath = createMenuItem("Copy Path",e->{
+						copyPathToClipBoard(clickedTreeNode.diskItem);
+					}));
+		//			createCheckBoxMenuItems(pst, Layouter.Type.values(), t->t.title, FileMap.this::setLayouter);
+		//			add(configureLayouter = createMenuItem("Configure Layouter ...",e->currentLayouter.showConfig(FileMap.this)));
+		//			addSeparator();
+		//			createCheckBoxMenuItems(pt , Painter .Type.values(), t->t.title, FileMap.this::setPainter );
+		//			add(configurePainter = createMenuItem("Configure Painter ...",e->currentPainter.showConfig(FileMap.this)));
+				}
+				
+				public void show(Component invoker, int x, int y, DiskItemTreeNode clickedTreeNode) {
+					this.clickedTreeNode = clickedTreeNode;
+					showInFileMap.setEnabled(this.clickedTreeNode!=null && !this.clickedTreeNode.isLeaf());
+					copyPath     .setEnabled(this.clickedTreeNode!=null);
+					show(invoker, x, y);
+				}
+				
+				@SuppressWarnings("unused")
+				private <E extends Enum<E>> void createCheckBoxMenuItems(E selected, E[] values, Function<E,String> getTitle, Consumer<E> set) {
+					ButtonGroup bg = new ButtonGroup();
+					for (E t:values)
+						add(createCheckBoxMenuItem(getTitle.apply(t),t==selected,bg,e->set.accept(t)));
+				}
+				private JCheckBoxMenuItem createCheckBoxMenuItem(String title, boolean isSelected, ButtonGroup bg, ActionListener al) {
+					JCheckBoxMenuItem comp = new JCheckBoxMenuItem(title,isSelected);
+					comp.addActionListener(al);
+					bg.add(comp);
+					return comp;
+				}
+				private JMenuItem createMenuItem(String title, ActionListener al) {
+					JMenuItem comp = new JMenuItem(title);
+					comp.addActionListener(al);
+					return comp;
+				}
+			}
+
+		public void expandPathInTree(DiskItem diskItems) {
+			DiskItemTreeNode node = rootTreeNode.find(diskItems);
+			if (node==null) return;
+			TreePath treePath = node.getPath();
+			//System.out.println(treePath);
+			treeView.setSelectionPath(treePath);
+			treeView.scrollPathToVisible(treePath);
 		}
 	}
 
-	private class ContextMenu extends JPopupMenu {
-		private static final long serialVersionUID = 4192144302244498205L;
-		private DiskItemTreeNode clickedTreeNode;
-		private JMenuItem showInFileMap;
+	private class FileMapPanel extends JPanel {
+		private static final long serialVersionUID = 4060339037904604642L;
 		
-		ContextMenu() {
-			add(showInFileMap = createMenuItem("Show in File Map",e->{
-				setFileMapRoot(clickedTreeNode.diskItem);
-				treeView.repaint();
-			}));
-//			createCheckBoxMenuItems(pst, Layouter.Type.values(), t->t.title, FileMap.this::setLayouter);
-//			add(configureLayouter = createMenuItem("Configure Layouter ...",e->currentLayouter.showConfig(FileMap.this)));
-//			addSeparator();
-//			createCheckBoxMenuItems(pt , Painter .Type.values(), t->t.title, FileMap.this::setPainter );
-//			add(configurePainter = createMenuItem("Configure Painter ...",e->currentPainter.showConfig(FileMap.this)));
-		}
+		private FileMap fileMap;
+		private DiskItem fileMapRoot;
+		private JTextField fileMapRootPathField;
 		
-		public void show(Component invoker, int x, int y, DiskItemTreeNode clickedTreeNode) {
-			this.clickedTreeNode = clickedTreeNode;
-			showInFileMap.setEnabled(this.clickedTreeNode!=null && !this.clickedTreeNode.isLeaf());
-			show(invoker, x, y);
-		}
-		
-		@SuppressWarnings("unused")
-		private <E extends Enum<E>> void createCheckBoxMenuItems(E selected, E[] values, Function<E,String> getTitle, Consumer<E> set) {
-			ButtonGroup bg = new ButtonGroup();
-			for (E t:values)
-				add(createCheckBoxMenuItem(getTitle.apply(t),t==selected,bg,e->set.accept(t)));
-		}
-		private JCheckBoxMenuItem createCheckBoxMenuItem(String title, boolean isSelected, ButtonGroup bg, ActionListener al) {
-			JCheckBoxMenuItem comp = new JCheckBoxMenuItem(title,isSelected);
-			comp.addActionListener(al);
-			bg.add(comp);
-			return comp;
-		}
-		private JMenuItem createMenuItem(String title, ActionListener al) {
-			JMenuItem comp = new JMenuItem(title);
-			comp.addActionListener(al);
-			return comp;
+		FileMapPanel() {
+			super(new GridBagLayout());
+			GridBagConstraints c = new GridBagConstraints();
+			
+			fileMapRoot = null;
+			fileMap = new FileMap(fileMapRoot,1000,800,DiskUsage.this);
+			fileMap.setPreferredSize(new Dimension(1000,800));
+			
+			GBC.reset(c);
+			GBC.setLineEnd(c);
+			GBC.setFill(c, GBC.GridFill.BOTH);
+			setBorder(BorderFactory.createTitledBorder("File Map"));
+			add(fileMapRootPathField = GUI.createOutputTextField(getFileMapRootLabel()),GBC.setWeights(c,1,0));
+			add(fileMap,GBC.setWeights(c,1,1));
+			fileMapRootPathField.setPreferredSize(new Dimension(30,30));
+			fileMapRootPathField.setMinimumSize(new Dimension(30,30));
 		}
 		
+		String getFileMapRootLabel() {
+			return fileMapRoot==null?null:fileMapRoot.getPathStr("  >  ");
+		}
+
+		void setFileMapRoot(DiskItem diskItem) {
+			fileMap.setRoot(fileMapRoot = diskItem);
+			fileMapRootPathField.setText(getFileMapRootLabel());
+		}
+
+		public void rootChanged() {
+			if (root!=null && root.children.size()==1)
+				setFileMapRoot(root.children.get(0));
+			else
+				setFileMapRoot(root);
+		}
+	}
+
+	@Override
+	public void copyPathToClipBoard(DiskItem diskItem) {
+		Properties prop = System.getProperties();
+		String file_separator = prop.get("file.separator").toString();
+		String pathStr = diskItem.getPathStr(file_separator);
+		if (pathStr!=null) copyToClipBoard(pathStr);
+	}
+
+	@Override
+	public boolean copyToClipBoard(String str) {
+		Toolkit toolkit = Toolkit.getDefaultToolkit();
+		if (toolkit==null) { return false; }
+		Clipboard clipboard = toolkit.getSystemClipboard();
+		if (clipboard==null) { return false; }
+		
+		StringSelection content = new StringSelection(str);
+		clipboard.setContents(content,content);
+		return true;
 	}
 
 	@Override
 	public void expandPathInTree(DiskItem diskItems) {
-		DiskItemTreeNode node = rootTreeNode.find(diskItems);
-		if (node==null) return;
-		TreePath treePath = node.getPath();
-		//System.out.println(treePath);
-		treeView.setSelectionPath(treePath);
-		treeView.scrollPathToVisible(treePath);
+		treePanel.expandPathInTree(diskItems);
 	}
 	
 	public DiskUsage readConfig() { Config.readConfig(); return this;}
@@ -374,115 +465,88 @@ public class DiskUsage implements FileMap.GuiContext {
 		private static String toString(Normal  normal) { return String.format(Locale.ENGLISH, "%1.6f,%1.6f,%1.6f", normal.x, normal.y, normal.z); }
 	}
 
-
-	private String getTreeSourceLabel() {
-		if (treeSource==null) return "";
-		if (treeSource.isFile     ()) return "[StoredTree]  "+treeSource.getAbsolutePath();
-		if (treeSource.isDirectory()) return "[Folder]  "+treeSource.getAbsolutePath();
-		 return "[???]  "+treeSource.getAbsolutePath();
-	}
-
-	private void treeRootChanged() {
-		treeSourceField.setText(getTreeSourceLabel());
-		rootTreeNode = new DiskItemTreeNode(root);
-		treeViewModel.setRoot(rootTreeNode);
-		setFileMapRoot(root);
-	}
-
-	private void setFileMapRoot(DiskItem diskItem) {
-		fileMap.setRoot(fileMapRoot = diskItem);
-		fileMapRootPathField.setText(fileMapRoot.getPathStr(true));
-	}
-
 	private void selectFolder() {
 		if (folderChooser.showOpenDialog(mainWindow)==JFileChooser.APPROVE_OPTION) {
+			File selectedfolder = folderChooser.getSelectedFile();
 			ProgressDialog.runWithProgressDialog(mainWindow, "Read Folder", 500, pd->{
 				pd.setTaskTitle("Read Folder");
 				pd.setIndeterminate(true);
-				readFolder(pd,folderChooser.getSelectedFile());
+				
+				root = new DiskItem();
+				DiskItem folderDI = root.addChild(selectedfolder);
+				pd.setValue(0, 10000);
+				folderDI.addChildren(pd,0,10000,selectedfolder);
+				
+				pd.setTaskTitle("Determine File Types");
+				pd.setIndeterminate(true);
+				
+				DiskItemType.setTypes(root);
 			});
-			treeRootChanged();
+			treePanel.rootChanged(selectedfolder);
+			fileMapPanel.rootChanged();
 		}
 	}
 
 	private void openStoredTree() {
 		if (storedTreeChooser.showOpenDialog(mainWindow)==FileChooser.APPROVE_OPTION) {
-			ProgressDialog.runWithProgressDialog(mainWindow, "Read Stored Tree", 300, pd->{
-				pd.setTaskTitle("Read Stored Tree");
-				pd.setIndeterminate(true);
-				readStoredTree(storedTreeChooser.getSelectedFile());
-			});
-			treeRootChanged();
+			File selectedFile = storedTreeChooser.getSelectedFile();
+			openStoredTree(selectedFile);
 		}
+	}
+
+	private DiskUsage openStoredTree(File selectedFile) {
+		ProgressDialog.runWithProgressDialog(mainWindow, "Read Stored Tree", 300, pd->{
+			
+			pd.setTaskTitle("Read Stored Tree");
+			pd.setIndeterminate(true);
+			
+			root = null;
+			try (BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(selectedFile), StandardCharsets.UTF_8))) {
+				root = new DiskItem();
+				String line;
+				while ( (line=in.readLine())!=null ) {
+					int pos = line.indexOf(0x9);
+					long size_kB = Long.parseLong(line.substring(0,pos));
+					String[] path = line.substring(pos+1).split("/");
+					DiskItem item = root.get(path);
+					item.size_kB = size_kB;
+				}
+				
+			} catch (FileNotFoundException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+			
+			pd.setTaskTitle("Determine File Types");
+			pd.setIndeterminate(true);
+			
+			DiskItemType.setTypes(root);
+		});
+		treePanel.rootChanged(selectedFile);
+		fileMapPanel.rootChanged();
+		return this;
 	}
 
 	private void saveStoredTree() {
 		if (storedTreeChooser.showSaveDialog(mainWindow)==FileChooser.APPROVE_OPTION) {
 			ProgressDialog.runWithProgressDialog(mainWindow, "Write Stored Tree", 300, pd->{
+				
 				pd.setTaskTitle("Write Stored Tree");
 				pd.setIndeterminate(true);
-				writeStoredTree(storedTreeChooser.getSelectedFile());
+				
+				try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(storedTreeChooser.getSelectedFile()), StandardCharsets.UTF_8))) {
+					if (root!=null)
+						root.traverse((DiskItem di)->{
+							if (di==root) return;
+							out.printf("%d\t%s%n", di.size_kB, di.getPathStr("/"));
+						});
+				} catch (FileNotFoundException e) {
+					e.printStackTrace();
+				}
+				
 			});
 		}
-	}
-
-	private void writeStoredTree(File file) {
-		try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8))) {
-			DiskItem.traverse(root,(DiskItem di)->{
-				if (di==root) return;
-				out.printf("%d\t%s%n", di.size_kB, di.getPathStr(false));
-			});
-		} catch (FileNotFoundException e) {
-			e.printStackTrace();
-		}
-	}
-
-	private DiskUsage readStoredTree(File file) {
-		root = null;
-		treeSource = file;
-		try (BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
-			root = new DiskItem();
-			String line;
-			while ( (line=in.readLine())!=null ) {
-				int pos = line.indexOf(0x9);
-				long size_kB = Long.parseLong(line.substring(0,pos));
-				String[] path = line.substring(pos+1).split("/");
-				DiskItem item = root.get(path);
-				item.size_kB = size_kB;
-			}
-			
-		} catch (FileNotFoundException e) {
-			e.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-		
-		determineFileTypes();
-		
-		return this;
-	}
-
-	private void readFolder(ProgressDialog pd, File folder) {
-		root = new DiskItem();
-		treeSource = folder;
-		DiskItem folderDI = root.addChild(folder);
-		folderDI.addChildren(pd,folder);
-		
-		pd.setTaskTitle("Determine File Types");
-		pd.setIndeterminate(true);
-		determineFileTypes();
-	}
-
-	private void determineFileTypes() {
-		DiskItem.traverse(root,di->{
-			if (di.children.isEmpty())
-				for (DiskItemType dit:DiskItemType.values())
-					for (String ext:dit.fileExtensions)
-						if (di.name.toLowerCase().endsWith("."+ext)) {
-							di.type = dit;
-							return;
-						}
-		});
 	}
 
 	private static class DiskItemTreeNode implements TreeNode {
@@ -549,14 +613,34 @@ public class DiskUsage implements FileMap.GuiContext {
 		@Override public int      getIndex(TreeNode node)    { if (children==null) createChildren(); return Arrays.asList(children).indexOf(node); }
 	}
 	
-	enum DiskItemType {
-		Video   ("Video"             , new Color(0x7F0000), "mp4","mpg","mpeg","wmv","webm","stream","vob"),
-		ts      ("Transport Stream"  , new Color(0xad3d00), "ts" ),
-		Audio   ("Audio"             , new Color(0x237f00), "wav","mp3","ac3"),
-		Archive ("Archive"           , new Color(0xff6d00), "zip","7z","tar.gz","tar","gz","rar","iso"),
-		Text    ("Text"              , new Color(0x6868a3), "eit", "txt"),
-		Image   ("Image"             , new Color(0x5656ff), "png","jpg", "jpeg"),
-		;
+	static class DiskItemType {
+		static Vector<DiskItemType> types;
+		static {
+			types = new Vector<>();
+			types.add(new DiskItemType("Video"             , new Color(0x7F0000), "mp4","mpg","mpeg","wmv","webm","stream","vob"));
+			types.add(new DiskItemType("Transport Stream"  , new Color(0xad3d00), "ts" ));
+			types.add(new DiskItemType("Audio"             , new Color(0x237f00), "wav","mp3","ac3"));
+			types.add(new DiskItemType("Archive"           , new Color(0xff6d00), "zip","7z","tar.gz","tar","gz","rar","iso","pak"));
+			types.add(new DiskItemType("Text"              , new Color(0x6868a3), "eit", "txt"));
+			types.add(new DiskItemType("Image"             , new Color(0x5656ff), "png","jpg", "jpeg"));
+		}
+		
+		public static DiskItemType getType(String filename) {
+			filename = filename.toLowerCase();
+			for (DiskItemType dit:types)
+				for (String ext:dit.fileExtensions)
+					if (filename.endsWith("."+ext))
+						return dit;
+			return null;
+		}
+		public static void setTypes(DiskItem diskItem) {
+			if (diskItem!=null)
+				diskItem.traverse(di->{
+					if (di.children.isEmpty())
+						di.type = DiskItemType.getType(di.name);
+				});
+		}
+
 		final Color color;
 		final String[] fileExtensions;
 		final String label;
@@ -591,11 +675,11 @@ public class DiskUsage implements FileMap.GuiContext {
 			return parent.isChildOf(diskItem);
 		}
 		
-		public String getPathStr(boolean forGUI) {
-			if (parent == null) return forGUI?name:null;
-			String pathStr = parent.getPathStr(forGUI);
+		public String getPathStr(String glue) {
+			if (parent == null) return null;
+			String pathStr = parent.getPathStr(glue);
 			if (pathStr==null) return name;
-			return pathStr + (forGUI?"  >  ":"/") +name;
+			return pathStr+glue+name;
 		}
 		
 		@Override
@@ -637,9 +721,8 @@ public class DiskUsage implements FileMap.GuiContext {
 			children.add(child);
 			return child;
 		}
-		public void addChildren(ProgressDialog pd, File folder) {
+		public void addChildren(ProgressDialog pd, double pdMin, double pdMax, File folder) {
 			pd.setTaskTitle(folder.getAbsolutePath());
-			pd.setIndeterminate(true);
 			
 			File[] files = folder.listFiles((FileFilter) file -> {
 				if (file.isDirectory()) {
@@ -648,11 +731,17 @@ public class DiskUsage implements FileMap.GuiContext {
 				}
 				return true;
 			});
-			for (File file:files) {
-				DiskItem child = addChild(file);
-				if (file.isDirectory()) {
-					child.addChildren(pd,file);
-					pd.setTaskTitle(folder.getAbsolutePath());
+			if (files.length>0) {
+				double pdStep = (pdMax-pdMin)/files.length;
+				double pdPos = pdMin;
+				for (File file:files) {
+					DiskItem child = addChild(file);
+					if (file.isDirectory()) {
+						child.addChildren(pd,pdPos,pdPos+pdStep,file);
+						pd.setTaskTitle(folder.getAbsolutePath());
+					}
+					pdPos+=pdStep;
+					pd.setValue((int)pdPos);
 				}
 			}
 			size_kB += sumSizeOfChildren();
@@ -663,10 +752,11 @@ public class DiskUsage implements FileMap.GuiContext {
 				sum += child.size_kB;
 			return sum;
 		}
-		public static void traverse(DiskItem di, Consumer<DiskItem> consumer) {
-			consumer.accept(di);
-			for (DiskItem child:di.children)
-				traverse(child, consumer);
+		
+		public void traverse(Consumer<DiskItem> consumer) {
+			consumer.accept(this);
+			for (DiskItem child:children)
+				child.traverse(consumer);
 		}
 	}
 
