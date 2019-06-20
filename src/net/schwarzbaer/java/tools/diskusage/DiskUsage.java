@@ -81,8 +81,12 @@ public class DiskUsage implements FileMap.GuiContext {
 		try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
 		catch (ClassNotFoundException | InstantiationException | IllegalAccessException | UnsupportedLookAndFeelException e) {}
 		
-		File file = new File("hdd.diskusage");
-		new DiskUsage().readConfig().createGUI().openStoredTree(file);
+		DiskUsage diskUsage = new DiskUsage().readConfig().createGUI();
+//		File file = new File("hdd.diskusage");
+//		if (file.isFile())
+//			diskUsage.openStoredTree(file);
+//		else
+			diskUsage.showOpenDialog();
 	}
 	
 	private DiskItem root;
@@ -122,7 +126,35 @@ public class DiskUsage implements FileMap.GuiContext {
 		
 		return this;
 	}
+	
+	private void showOpenDialog() {
+		new OpenDialog(mainWindow,"Load File Tree").showDialog();
+	}
 
+	private class OpenDialog extends StandardDialog {
+		private static final long serialVersionUID = 2425769711741725154L;
+
+		public OpenDialog(Window parent, String title) {
+			super(parent, title);
+			JPanel contentPane = new JPanel(new GridBagLayout());
+			contentPane.setBorder(BorderFactory.createEmptyBorder(20,20,20,20));
+			GridBagConstraints c = new GridBagConstraints();
+			GBC.setFill(c, GBC.GridFill.BOTH);
+			GBC.setLineEnd(c);
+			GBC.setWeights(c,1,1);
+			contentPane.add(createButton(Icons32.OpenFolder    ,"Select Folder"      ,e->{ boolean success = selectFolder  (); if (success) closeDialog(); }),c);
+			contentPane.add(createButton(Icons32.OpenStoredTree,"Open Stored Tree"   ,e->{ boolean success = openStoredTree(); if (success) closeDialog(); }),c);
+			createGUI(contentPane);
+		}
+		
+		private JButton createButton(Icons32 icon, String title, ActionListener al) {
+			JButton btn = new JButton(title,icons32.getCachedIcon(icon));
+			btn.setHorizontalAlignment(JButton.LEFT);
+			btn.addActionListener(al);
+			return btn;
+		}
+	}
+	
 	private class TreePanel extends JPanel {
 		private static final long serialVersionUID = 4456876243723688978L;
 		
@@ -733,7 +765,7 @@ public class DiskUsage implements FileMap.GuiContext {
 		private static String toString(Normal  normal) { return String.format(Locale.ENGLISH, "%1.6f,%1.6f,%1.6f", normal.x, normal.y, normal.z); }
 	}
 
-	private void selectFolder() {
+	private boolean selectFolder() {
 		if (folderChooser.showOpenDialog(mainWindow)==JFileChooser.APPROVE_OPTION) {
 			File selectedfolder = folderChooser.getSelectedFile();
 			ProgressDialog.runWithProgressDialog(mainWindow, "Read Folder", 500, pd->{
@@ -752,14 +784,18 @@ public class DiskUsage implements FileMap.GuiContext {
 			});
 			treePanel.rootChanged(selectedfolder);
 			fileMapPanel.rootChanged();
+			return true;
 		}
+		return false;
 	}
 
-	private void openStoredTree() {
+	private boolean openStoredTree() {
 		if (storedTreeChooser.showOpenDialog(mainWindow)==FileChooser.APPROVE_OPTION) {
 			File selectedFile = storedTreeChooser.getSelectedFile();
 			openStoredTree(selectedFile);
+			return true;
 		}
+		return false;
 	}
 
 	private DiskUsage openStoredTree(File selectedFile) {
