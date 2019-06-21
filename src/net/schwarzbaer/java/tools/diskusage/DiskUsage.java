@@ -627,6 +627,7 @@ public class DiskUsage implements FileMap.GuiContext {
 		private static final String VALUE_CUSHIONPAINTER_SELECTED_FOLDER = "selectedFolder";
 		private static final String VALUE_CUSHIONPAINTER_MATERIAL_COLOR = "materialColor";
 		private static final String VALUE_CUSHIONPAINTER_MATERIAL_PHONG_EXP = "materialPhongExp";
+		private static final String VALUE_CUSHIONPAINTER_CUSHIONCONTOUR = "cushionContour";
 		private static final String VALUE_CUSHIONPAINTER_CUSHIONESS = "cushioness";
 		private static final String VALUE_CUSHIONPAINTER_CUSHION_HEIGHT_SCALE = "cushionHeightScale";
 		private static final String VALUE_CUSHIONPAINTER_AUTOMATIC_SAVING = "automaticSaving";
@@ -658,7 +659,8 @@ public class DiskUsage implements FileMap.GuiContext {
 				out.printf(VALUE_CUSHIONPAINTER_SELECTED_FOLDER     +"=%s%n",toString(config.selectedFolder    ));
 				out.printf(VALUE_CUSHIONPAINTER_MATERIAL_COLOR      +"=%s%n",toString(config.materialColor     ));
 				out.printf(VALUE_CUSHIONPAINTER_MATERIAL_PHONG_EXP  +"=%s%n",toString(config.materialPhongExp  ));
-				out.printf(VALUE_CUSHIONPAINTER_CUSHIONESS          +"=%s%n",toString(config.alpha             ));
+				out.printf(VALUE_CUSHIONPAINTER_CUSHIONCONTOUR      +"=%s%n",toString(config.cushionContour    ));
+				out.printf(VALUE_CUSHIONPAINTER_CUSHIONESS          +"=%s%n",toString(config.cushioness        ));
 				out.printf(VALUE_CUSHIONPAINTER_CUSHION_HEIGHT_SCALE+"=%s%n",toString(config.cushionHeightScale));
 				out.printf(VALUE_CUSHIONPAINTER_AUTOMATIC_SAVING    +"=%s%n",toString(config.automaticSaving   ));
 				out.println();
@@ -701,7 +703,8 @@ public class DiskUsage implements FileMap.GuiContext {
 							if (str.startsWith(VALUE_CUSHIONPAINTER_SELECTED_FOLDER     +"=")) config.selectedFolder     = parseColor ( str.substring(VALUE_CUSHIONPAINTER_SELECTED_FOLDER     .length()+1) );
 							if (str.startsWith(VALUE_CUSHIONPAINTER_MATERIAL_COLOR      +"=")) config.materialColor      = parseColor ( str.substring(VALUE_CUSHIONPAINTER_MATERIAL_COLOR      .length()+1) );
 							if (str.startsWith(VALUE_CUSHIONPAINTER_MATERIAL_PHONG_EXP  +"=")) config.materialPhongExp   = parseDouble( str.substring(VALUE_CUSHIONPAINTER_MATERIAL_PHONG_EXP  .length()+1) );
-							if (str.startsWith(VALUE_CUSHIONPAINTER_CUSHIONESS          +"=")) config.alpha              = parseDouble( str.substring(VALUE_CUSHIONPAINTER_CUSHIONESS          .length()+1) );
+							if (str.startsWith(VALUE_CUSHIONPAINTER_CUSHIONCONTOUR      +"=")) config.cushionContour     = parseEnum  ( str.substring(VALUE_CUSHIONPAINTER_CUSHIONCONTOUR      .length()+1), Painter.CushionPainter.CushionContour.Variant::valueOf );
+							if (str.startsWith(VALUE_CUSHIONPAINTER_CUSHIONESS          +"=")) config.cushioness         = parseDouble( str.substring(VALUE_CUSHIONPAINTER_CUSHIONESS          .length()+1) );
 							if (str.startsWith(VALUE_CUSHIONPAINTER_CUSHION_HEIGHT_SCALE+"=")) config.cushionHeightScale = parseFloat ( str.substring(VALUE_CUSHIONPAINTER_CUSHION_HEIGHT_SCALE.length()+1) );
 							if (str.startsWith(VALUE_CUSHIONPAINTER_AUTOMATIC_SAVING    +"=")) config.automaticSaving    = parseBool  ( str.substring(VALUE_CUSHIONPAINTER_AUTOMATIC_SAVING    .length()+1) );
 							if (str.isEmpty()) currentConfigBlock = null;
@@ -758,11 +761,18 @@ public class DiskUsage implements FileMap.GuiContext {
 				 throw new ParseException("Can't parse Normal value: \"%s\"", str); 
 			}
 		}
-		
 		private static String toString(boolean b     ) { return b?"true":"false"; }
 		private static String toString(double  d     ) { return String.format(Locale.ENGLISH, "%1.6f", d); }
 		private static String toString(Color   color ) { return String.format("%06X", color.getRGB()&0xFFFFFF); }
 		private static String toString(Normal  normal) { return String.format(Locale.ENGLISH, "%1.6f,%1.6f,%1.6f", normal.x, normal.y, normal.z); }
+		
+		private static <E extends Enum<E>> E parseEnum(String str, Function<String,E> valueOf) {
+			try { return valueOf.apply(str); }
+			catch (Exception e) { return null; }
+		}
+		private static <E extends Enum<E>> String toString(E e) {
+			return e==null?"<null>":e.name();
+		}
 	}
 
 	private boolean selectFolder() {
