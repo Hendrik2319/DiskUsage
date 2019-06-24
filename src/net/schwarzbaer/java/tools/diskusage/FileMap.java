@@ -6,6 +6,7 @@ import java.awt.Rectangle;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
+import java.awt.event.MouseMotionListener;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.function.Consumer;
@@ -27,6 +28,7 @@ public class FileMap extends Canvas {
 		boolean copyToClipBoard(String str);
 		void expandPathInTree(DiskItem diskItem);
 		void saveConfig();
+		void showHighlightedMapItem(DiskItem diskItem);
 	}
 	
 	final GuiContext guiContext;
@@ -35,6 +37,7 @@ public class FileMap extends Canvas {
 	private Painter currentPainter;
 	private MapItem selectedMapItem = null;
 	private ContextMenu contextMenu;
+	private MapItem highlightedMapItem;
 
 	public FileMap(DiskItem root, int width, int height, GuiContext guiContext) {
 		this.guiContext = guiContext;
@@ -45,7 +48,9 @@ public class FileMap extends Canvas {
 		currentLayouter = lt.createLayouter.get();
 		currentLayouter.setPainter(currentPainter);
 		contextMenu = new ContextMenu(pt,lt);
-		addMouseListener(new MyMouseListener());
+		MyMouseListener mouseListener = new MyMouseListener();
+		addMouseListener(mouseListener);
+		addMouseMotionListener(mouseListener);
 	}
 
 	public void setRoot(DiskItem root) {
@@ -63,9 +68,14 @@ public class FileMap extends Canvas {
 			setSelected(root.find(diskItem));
 	}
 	private void setSelected(MapItem mapItem) {
-		if (selectedMapItem!=null) selectedMapItem.setSelected(false);
 		selectedMapItem = mapItem;
-		if (selectedMapItem!=null) selectedMapItem.setSelected(true);
+		setHighlighted(selectedMapItem);
+	}
+	private void setHighlighted(MapItem mapItem) {
+		if (highlightedMapItem!=null) highlightedMapItem.setHighlighted(false);
+		highlightedMapItem = mapItem;
+		if (highlightedMapItem!=null) highlightedMapItem.setHighlighted(true);
+		guiContext.showHighlightedMapItem(highlightedMapItem==null?null:highlightedMapItem.diskItem);
 		repaint();
 	}
 
@@ -88,22 +98,42 @@ public class FileMap extends Canvas {
 			currentPainter.paintAll(root,g,x,y,width,height);
 	}
 
-	private class MyMouseListener implements MouseListener {
-
+	private class MyMouseListener implements MouseListener, MouseMotionListener {
+		
+		private MapItem getMapItemAt(MouseEvent e) {
+			return root==null?null:root.getMapItemAt(e.getX(), e.getY());
+		}
+		
+		@Override public void mouseDragged(MouseEvent e) {}
 		@Override public void mousePressed (MouseEvent e) {}
 		@Override public void mouseReleased(MouseEvent e) {}
-		@Override public void mouseEntered (MouseEvent e) {}
-		@Override public void mouseExited  (MouseEvent e) {}
+		
 		@Override public void mouseClicked (MouseEvent e) {
-			MapItem clickedMapItem = root==null?null:root.getMapItemAt(e.getX(), e.getY());
-			
 			if (e.getButton()==MouseEvent.BUTTON3)
-				contextMenu.show(FileMap.this, clickedMapItem, e.getX(), e.getY());
+				contextMenu.show(FileMap.this, getMapItemAt(e), e.getX(), e.getY());
 			
 			if (e.getButton()==MouseEvent.BUTTON1) {
-				setSelected(clickedMapItem);
+				setSelected(getMapItemAt(e));
 				if (selectedMapItem!=null) guiContext.expandPathInTree(selectedMapItem.diskItem);
 			}
+		}
+		
+		@Override public void mouseEntered (MouseEvent e) {
+			setHighlighted(getMapItemAt(e));
+		}
+		@Override public void mouseMoved(MouseEvent e) {
+			if (highlightedMapItem==null)
+				setHighlighted(getMapItemAt(e));
+			else {
+				MapItem mouseOverMapItem = highlightedMapItem.getMapItemAt(e.getX(), e.getY());
+				if (mouseOverMapItem==null)
+					setHighlighted(getMapItemAt(e));
+				else if (mouseOverMapItem!=highlightedMapItem)
+					setHighlighted(mouseOverMapItem);
+			}
+		}
+		@Override public void mouseExited  (MouseEvent e) {
+			setHighlighted(selectedMapItem);
 		}
 	}
 	
@@ -161,10 +191,9 @@ public class FileMap extends Canvas {
 		final int level;
 
 		double relativeSize = 1.0;
-		private long sizeOfChildren = 0;
 
 		public Rectangle screenBox = new Rectangle();
-		boolean isSelected = false;
+		boolean isHighlighted = false;
 
 		public MapItem(DiskItem diskItem) { this(null,diskItem,0); }
 		public MapItem(MapItem parent, DiskItem diskItem, int level) {
@@ -172,7 +201,7 @@ public class FileMap extends Canvas {
 			this.diskItem = diskItem;
 			this.level = level;
 			this.children = diskItem.children.stream()
-					.filter(di->di.size_kB>0)
+					//.filter(di->di.size_kB>0)
 					.map(di->new MapItem(this,di,level+1))
 					.toArray(n->new MapItem[n]);
 			Arrays.sort(
@@ -180,23 +209,29 @@ public class FileMap extends Canvas {
 					Comparator.<MapItem,DiskItem>comparing(c->c.diskItem,Comparator.<DiskItem,Long>comparing(di->di.size_kB,Comparator.reverseOrder()))
 			);
 			
-			sizeOfChildren = 0;
+			long sizeOfChildren = 0;
 			for (MapItem child:children) sizeOfChildren += child.diskItem.size_kB;
-			for (MapItem child:children) child.relativeSize = child.diskItem.size_kB/(double)sizeOfChildren;
+			for (MapItem child:children) child.relativeSize = sizeOfChildren==0?1.0/children.length:child.diskItem.size_kB/(double)sizeOfChildren;
 		}
 		
-		public void setSelected(boolean isSelected) {
-			this.isSelected = isSelected;
-			if (parent!=null) parent.setSelected(isSelected);
+		public void setHighlighted(boolean isHighlighted) {
+			this.isHighlighted = isHighlighted;
+			if (parent!=null) parent.setHighlighted(isHighlighted);
 		}
+		
 		public MapItem getMapItemAt(int x, int y) {
-			if (!screenBox.contains(x,y)) return null;
+			if (!isAt(x, y)) return null;
 			for (MapItem child:children) {
 				MapItem hit = child.getMapItemAt(x,y);
 				if (hit!=null) return hit;
 			}
 			return this;
 		}
+		
+		private boolean isAt(int x, int y) {
+			return screenBox.contains(x,y);
+		}
+		
 		public MapItem find(DiskItem diskItem) {
 			if (this.diskItem == diskItem) return this;
 			for (MapItem child:children) {

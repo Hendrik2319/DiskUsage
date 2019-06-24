@@ -89,7 +89,7 @@ abstract class Painter {
 			g.drawRect(x, y, width-1, height-1);
 		}
 		protected Color getColor(MapItem mapItem) {
-			if (mapItem.isSelected) {
+			if (mapItem.isHighlighted) {
 				if (mapItem.children.length==0) return selectedLeaf;
 				return selectedFolder;
 			}
@@ -166,50 +166,24 @@ abstract class Painter {
 				xOffset = x;
 				yOffset = y;
 				layouter.layoutMapItem(root,null,x,y,width,height);
-				Normal[][] normalMap = new Normal[width][height];
-				for (int x1=0; x1<width; ++x1)
-					for (int y1=0; y1<height; ++y1) {
-						Normal n = new Normal(0,0,0,tempColorMap[x1][y1]);
-						addNormal(n,computeNormal(x1,y1,+1, 0)); 
-						addNormal(n,computeNormal(x1,y1,-1, 0)); 
-						addNormal(n,computeNormal(x1,y1, 0,+1)); 
-						addNormal(n,computeNormal(x1,y1, 0,-1));
-						normalMap[x1][y1] = n.normalize();
-					}
-				bumpMapping.setNormalMap(normalMap);
+				bumpMapping.setHeightMap(tempHeightMap, tempColorMap, 0);
 				tempCushionContour = null;
 				tempHeightMap = null;
 				tempColorMap  = null;
 			}
 			g.drawImage(imageCache.getImage(width,height), x, y, null);
-			drawSelected(root,g);
+			drawHighlighted(root,g);
 		}
 
-		private void drawSelected(MapItem mapItem, Graphics g) {
-			if (mapItem.isSelected) {
+		private void drawHighlighted(MapItem mapItem, Graphics g) {
+			if (mapItem.isHighlighted) {
 				if (mapItem.children.length==0) g.setColor(config.selectedFile);
 				else g.setColor(config.selectedFolder);
 				Rectangle b = mapItem.screenBox;
 				g.drawRect(b.x, b.y, b.width-1, b.height-1);
 				for (MapItem child:mapItem.children)
-					drawSelected(child,g);
+					drawHighlighted(child,g);
 			}
-		}
-		private void addNormal(Normal base, Normal n) {
-			if (n != null) {
-				base.x += n.x;
-				base.y += n.y;
-				base.z += n.z;
-			}
-		}
-
-		private Normal computeNormal(int x, int y, int dx, int dy) {
-			if (x+dx<0 || x+dx>=tempHeightMap   .length) return null;
-			if (y+dy<0 || y+dy>=tempHeightMap[0].length) return null;
-			float dh = tempHeightMap[x][y]-tempHeightMap[x+dx][y+dy];
-			if (dx!=0) return new Normal(dh*dx,0,Math.abs(dx)).normalize();
-			if (dy!=0) return new Normal(0,dh*dy,Math.abs(dy)).normalize();
-			return null;
 		}
 
 		@Override

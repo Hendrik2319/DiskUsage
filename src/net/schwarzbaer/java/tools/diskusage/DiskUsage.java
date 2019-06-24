@@ -40,6 +40,7 @@ import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JFileChooser;
+import javax.swing.JLabel;
 import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
@@ -347,9 +348,12 @@ public class DiskUsage implements FileMap.GuiContext {
 		private FileMap fileMap;
 		private DiskItem fileMapRoot;
 		private JTextField fileMapRootPathField;
+		private JTextField highlightedPathField;
 		
 		FileMapPanel() {
 			super(new GridBagLayout());
+			setBorder(BorderFactory.createTitledBorder("File Map"));
+			
 			GridBagConstraints c = new GridBagConstraints();
 			
 			fileMapRoot = null;
@@ -357,29 +361,42 @@ public class DiskUsage implements FileMap.GuiContext {
 			fileMap.setPreferredSize(new Dimension(1000,800));
 			
 			GBC.reset(c);
-			GBC.setLineEnd(c);
 			GBC.setFill(c, GBC.GridFill.BOTH);
-			setBorder(BorderFactory.createTitledBorder("File Map"));
-			add(fileMapRootPathField = GUI.createOutputTextField(getFileMapRootLabel()),GBC.setWeights(c,1,0));
-			add(fileMap,GBC.setWeights(c,1,1));
-			fileMapRootPathField.setPreferredSize(new Dimension(30,30));
-			fileMapRootPathField.setMinimumSize(new Dimension(30,30));
+			GBC.setLineMid(c);
+			GBC.setWeights(c,0,0);
+			add(new JLabel("Root Folder: "),GBC.setGridPos(c, 0,0));
+			add(new JLabel("Highlighted File/Folder: "),GBC.setGridPos(c, 0,1));
+			GBC.setWeights(c,1,0);
+			add(fileMapRootPathField = GUI.createOutputTextField(getPathStr(fileMapRoot)),GBC.setGridPos(c, 1,0));
+			add(highlightedPathField = GUI.createOutputTextField(""),GBC.setGridPos(c, 1,1));
+			
+			GBC.setGridPos(c, 0,2);
+			GBC.setLineEnd(c);
+			GBC.setWeights(c,1,1);
+			add(fileMap,c);
+			//fileMapRootPathField.setPreferredSize(new Dimension(30,30));
+			//fileMapRootPathField.setMinimumSize(new Dimension(30,30));
 		}
 		
-		String getFileMapRootLabel() {
-			return fileMapRoot==null?null:fileMapRoot.getPathStr("  >  ");
+		String getPathStr(DiskItem diskItem) {
+			return diskItem==null?null:diskItem.getPathStr("  >  ");
+		}
+		
+		void setHighlightedPath(DiskItem diskItem) {
+			highlightedPathField.setText(getPathStr(diskItem));
 		}
 
 		void setFileMapRoot(DiskItem diskItem) {
 			fileMap.setRoot(fileMapRoot = diskItem);
-			fileMapRootPathField.setText(getFileMapRootLabel());
+			fileMapRootPathField.setText(getPathStr(fileMapRoot));
+			highlightedPathField.setText(null);
 		}
 
 		public void rootChanged() {
-			if (root!=null && root.children.size()==1)
-				setFileMapRoot(root.children.get(0));
-			else
-				setFileMapRoot(root);
+			DiskItem fmr = root;
+			while (fmr!=null && fmr.children.size()==1)
+				fmr = fmr.children.get(0);
+			setFileMapRoot(fmr);
 		}
 	}
 	
@@ -590,6 +607,11 @@ public class DiskUsage implements FileMap.GuiContext {
 				}
 			}
 		}
+	}
+
+	@Override
+	public void showHighlightedMapItem(DiskItem diskItem) {
+		fileMapPanel.setHighlightedPath(diskItem);
 	}
 
 	@Override
