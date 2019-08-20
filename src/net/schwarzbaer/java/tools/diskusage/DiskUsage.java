@@ -1086,7 +1086,7 @@ public class DiskUsage implements FileMap.GuiContext {
 				}
 				return true;
 			});
-			if (files.length>0) {
+			if (files!=null && files.length>0) {
 				double pdStep = (pdMax-pdMin)/files.length;
 				double pdPos = pdMin;
 				for (File file:files) {
