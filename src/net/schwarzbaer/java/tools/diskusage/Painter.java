@@ -126,7 +126,7 @@ abstract class Painter {
 			bumpMappingShading = new MaterialShading(config.sun, config.materialColor, 0, config.materialPhongExp);
 			bumpMapping = new BumpMapping(false);
 			bumpMapping.setShading(bumpMappingShading);
-			imageCache = new ImageCache<>(bumpMapping::renderImageUncached);
+			imageCache = new ImageCache<>(bumpMapping::renderImage_uncached);
 		}
 		
 		@Override
