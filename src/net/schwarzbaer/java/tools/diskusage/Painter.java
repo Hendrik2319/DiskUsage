@@ -288,7 +288,7 @@ abstract class Painter {
 				BumpmappingSunControl sunControl = new BumpmappingSunControl(config.sun.x, config.sun.y, config.sun.z);
 				sunControl.setPreferredSize(new Dimension(300,300));
 				sunControl.addValueChangeListener((x,y,z)->{
-					config.sun.set(x,y,z);
+					config.sun = new Normal(x,y,z);
 					bumpMapping.setSun(x,y,z);
 					valueChanged(sunControl.isAdjusting(),false);
 				});
