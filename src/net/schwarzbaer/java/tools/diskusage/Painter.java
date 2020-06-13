@@ -123,7 +123,7 @@ abstract class Painter {
 		private Color[][] tempColorMap;
 
 		CushionPainter() {
-			bumpMappingShading = new MaterialShading(config.sun, config.materialColor, 0, config.materialPhongExp);
+			bumpMappingShading = new MaterialShading(config.sun, config.materialColor, 0, config.materialPhongExp, false,0);
 			bumpMapping = new BumpMapping(false);
 			bumpMapping.setShading(bumpMappingShading);
 			imageCache = new ImageCache<>(bumpMapping::renderImage_uncached);
