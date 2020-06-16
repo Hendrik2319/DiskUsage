@@ -124,7 +124,7 @@ abstract class Painter {
 
 		CushionPainter() {
 			bumpMappingShading = new MaterialShading(config.sun, config.materialColor, 0, config.materialPhongExp, false,0);
-			bumpMapping = new BumpMapping(false);
+			bumpMapping = new BumpMapping(false,false);
 			bumpMapping.setShading(bumpMappingShading);
 			imageCache = new ImageCache<>(bumpMapping::renderImage_uncached);
 		}
