@@ -31,7 +31,7 @@ import net.schwarzbaer.gui.StandardMainWindow;
 import net.schwarzbaer.image.ImageCache;
 import net.schwarzbaer.image.bumpmapping.BumpMapping;
 import net.schwarzbaer.image.bumpmapping.BumpMapping.Normal;
-import net.schwarzbaer.image.bumpmapping.BumpMapping.Shading.MaterialShading;
+import net.schwarzbaer.image.bumpmapping.Shading.MaterialShading;
 import net.schwarzbaer.java.tools.diskusage.DiskUsage.GBC;
 import net.schwarzbaer.java.tools.diskusage.FileMap.MapItem;
 import net.schwarzbaer.java.tools.diskusage.Painter.CushionPainter.CushionContour.Variant;
