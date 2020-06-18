@@ -72,7 +72,7 @@ import net.schwarzbaer.gui.StandardMainWindow;
 import net.schwarzbaer.gui.Tables;
 import net.schwarzbaer.gui.Tables.LabelRendererComponent;
 import net.schwarzbaer.gui.Tables.SimplifiedColumnConfig;
-import net.schwarzbaer.image.BumpMapping.Normal;
+import net.schwarzbaer.image.bumpmapping.BumpMapping.Normal;
 
 public class DiskUsage implements FileMap.GuiContext {
 
