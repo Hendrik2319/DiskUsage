@@ -31,6 +31,7 @@ import net.schwarzbaer.gui.StandardMainWindow;
 import net.schwarzbaer.image.ImageCache;
 import net.schwarzbaer.image.bumpmapping.BumpMapping;
 import net.schwarzbaer.image.bumpmapping.BumpMapping.Normal;
+import net.schwarzbaer.image.bumpmapping.NormalFunction.NormalMap;
 import net.schwarzbaer.image.bumpmapping.Shading.MaterialShading;
 import net.schwarzbaer.java.tools.diskusage.DiskUsage.GBC;
 import net.schwarzbaer.java.tools.diskusage.FileMap.MapItem;
@@ -166,7 +167,7 @@ abstract class Painter {
 				xOffset = x;
 				yOffset = y;
 				layouter.layoutMapItem(root,null,x,y,width,height);
-				bumpMapping.setHeightMap(tempHeightMap, tempColorMap, 0);
+				bumpMapping.setNormalFunction(NormalMap.createFromHeightMap(tempHeightMap, tempColorMap, 0));
 				tempCushionContour = null;
 				tempHeightMap = null;
 				tempColorMap  = null;
