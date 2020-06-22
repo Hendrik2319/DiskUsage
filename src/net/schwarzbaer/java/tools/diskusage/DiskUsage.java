@@ -7,10 +7,7 @@ import java.awt.Dimension;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
-import java.awt.Toolkit;
 import java.awt.Window;
-import java.awt.datatransfer.Clipboard;
-import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
@@ -73,6 +70,7 @@ import net.schwarzbaer.gui.Tables;
 import net.schwarzbaer.gui.Tables.LabelRendererComponent;
 import net.schwarzbaer.gui.Tables.SimplifiedColumnConfig;
 import net.schwarzbaer.image.bumpmapping.BumpMapping.Normal;
+import net.schwarzbaer.system.ClipboardTools;
 
 public class DiskUsage implements FileMap.GuiContext {
 
@@ -624,14 +622,7 @@ public class DiskUsage implements FileMap.GuiContext {
 
 	@Override
 	public boolean copyToClipBoard(String str) {
-		Toolkit toolkit = Toolkit.getDefaultToolkit();
-		if (toolkit==null) { return false; }
-		Clipboard clipboard = toolkit.getSystemClipboard();
-		if (clipboard==null) { return false; }
-		
-		StringSelection content = new StringSelection(str);
-		clipboard.setContents(content,content);
-		return true;
+		return ClipboardTools.copyToClipBoard(str);
 	}
 
 	@Override
