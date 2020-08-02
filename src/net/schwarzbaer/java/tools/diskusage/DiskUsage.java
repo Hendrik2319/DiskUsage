@@ -17,11 +17,14 @@ import java.io.FileFilter;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.FilterInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Enumeration;
@@ -39,6 +42,7 @@ import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JMenuItem;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
@@ -789,27 +793,31 @@ public class DiskUsage implements FileMap.GuiContext {
 	}
 
 	private boolean selectFolder() {
-		if (folderChooser.showOpenDialog(mainWindow)==JFileChooser.APPROVE_OPTION) {
-			File selectedfolder = folderChooser.getSelectedFile();
-			ProgressDialog.runWithProgressDialog(mainWindow, "Read Folder", 500, pd->{
-				pd.setTaskTitle("Read Folder");
-				pd.setIndeterminate(true);
-				
-				root = new DiskItem();
-				DiskItem folderDI = root.addChild(selectedfolder);
-				pd.setValue(0, 10000);
-				folderDI.addChildren(pd,0,10000,selectedfolder);
-				
-				pd.setTaskTitle("Determine File Types");
-				pd.setIndeterminate(true);
-				
-				DiskItemType.setTypes(root);
-			});
-			treePanel.rootChanged(selectedfolder);
-			fileMapPanel.rootChanged();
-			return true;
-		}
-		return false;
+		if (folderChooser.showOpenDialog(mainWindow) != JFileChooser.APPROVE_OPTION) return false;
+		
+		File selectedfolder = folderChooser.getSelectedFile();
+		
+		int res = JOptionPane.showConfirmDialog(mainWindow, "Follow symbolic links?", "Symbolic Links", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+		boolean followSymbolicLinks = res==JOptionPane.YES_OPTION;
+		if (res!=JOptionPane.YES_OPTION && res!=JOptionPane.NO_OPTION) return false;
+		
+		ProgressDialog.runWithProgressDialog(mainWindow, "Read Folder", 500, pd->{
+			pd.setTaskTitle("Read Folder");
+			pd.setIndeterminate(true);
+			
+			root = new DiskItem();
+			DiskItem folderDI = root.addChild(selectedfolder,followSymbolicLinks);
+			pd.setValue(0, 10000);
+			folderDI.addChildren(pd,0,10000,selectedfolder,followSymbolicLinks);
+			
+			pd.setTaskTitle("Determine File Types");
+			pd.setIndeterminate(true);
+			
+			DiskItemType.setTypes(root);
+		});
+		treePanel.rootChanged(selectedfolder);
+		fileMapPanel.rootChanged();
+		return true;
 	}
 
 	private boolean openStoredTree() {
@@ -825,10 +833,12 @@ public class DiskUsage implements FileMap.GuiContext {
 		ProgressDialog.runWithProgressDialog(mainWindow, "Read Stored Tree", 300, pd->{
 			
 			pd.setTaskTitle("Read Stored Tree");
-			pd.setIndeterminate(true);
+			long fileSize = selectedFile.length();
+			pd.setValue(0, (int) Math.min(Integer.MAX_VALUE, fileSize));
+			//pd.setIndeterminate(true);
 			
 			root = null;
-			try (BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(selectedFile), StandardCharsets.UTF_8))) {
+			try (ByteCounter byteCounter = new ByteCounter(new FileInputStream(selectedFile)); BufferedReader in = new BufferedReader(new InputStreamReader(byteCounter, StandardCharsets.UTF_8),1000000)) {
 				root = new DiskItem();
 				String line;
 				while ( (line=in.readLine())!=null ) {
@@ -837,6 +847,7 @@ public class DiskUsage implements FileMap.GuiContext {
 					String[] path = line.substring(pos+1).split("/");
 					DiskItem item = root.get(path);
 					item.size_kB = size_kB;
+					pd.setValue((int) Math.min(Integer.MAX_VALUE, byteCounter.readPos));
 				}
 				
 			} catch (FileNotFoundException e) {
@@ -864,7 +875,7 @@ public class DiskUsage implements FileMap.GuiContext {
 				
 				try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(storedTreeChooser.getSelectedFile()), StandardCharsets.UTF_8))) {
 					if (root!=null)
-						root.traverse((DiskItem di)->{
+						root.traverse(true,(DiskItem di)->{
 							if (di==root) return;
 							out.printf("%d\t%s%n", di.size_kB, di.getPathStr("/"));
 						});
@@ -874,6 +885,62 @@ public class DiskUsage implements FileMap.GuiContext {
 				
 			});
 		}
+	}
+	
+	private static class ByteCounter extends FilterInputStream {
+		
+		private long readPos;
+		private long markPos;
+
+		ByteCounter(InputStream in) {
+			super(in);
+			this.readPos = (long) 0;
+		}
+
+		@Override
+		public int read() throws IOException {
+			long temp = readPos;
+			int b = super.read();
+			this.readPos = temp + ((b>=0) ? 1 : 0);
+			return b;
+		}
+
+		@Override
+		public int read(byte[] b) throws IOException {
+			long temp = readPos;
+			int n = super.read(b);
+			this.readPos = temp + ((n>=0) ? n : 0);
+			return n;
+		}
+
+		@Override
+		public int read(byte[] b, int off, int len) throws IOException {
+			long temp = readPos;
+			int n = super.read(b, off, len);
+			this.readPos = temp + ((n>=0) ? n : 0);
+			return n;
+		}
+
+		@Override
+		public long skip(long n) throws IOException {
+			long temp = readPos;
+			n = super.skip(n);
+			this.readPos = temp + n;
+			return n;
+		}
+
+		@Override
+		public synchronized void mark(int readlimit) {
+			super.mark(readlimit);
+			markPos = readPos;
+		}
+
+		@Override
+		public synchronized void reset() throws IOException {
+			super.reset();
+			this.readPos = markPos;
+		}
+		
 	}
 
 	private static class DiskItemTreeNode implements TreeNode {
@@ -962,7 +1029,7 @@ public class DiskUsage implements FileMap.GuiContext {
 		}
 		public static void setTypes(DiskItem diskItem) {
 			if (diskItem!=null)
-				diskItem.traverse(di->{
+				diskItem.traverse(false,di->{
 					if (di.children.isEmpty())
 						di.type = DiskItemType.getType(di.name);
 				});
@@ -1061,14 +1128,17 @@ public class DiskUsage implements FileMap.GuiContext {
 			return child.getChild(path, i+1);
 		}
 		
-		public DiskItem addChild(File file) {
+		public DiskItem addChild(File file, boolean followSymbolicLinks) {
 			DiskItem child = new DiskItem(this,file.getName());
-			child.size_kB = (long) Math.ceil(file.length()/1024.0);
+			boolean isSymbolicLink = !followSymbolicLinks && Files.isSymbolicLink(file.toPath());
+			child.size_kB = isSymbolicLink ? 0 : (long) Math.ceil(file.length()/1024.0);
 			children.add(child);
 			return child;
 		}
-		public void addChildren(ProgressDialog pd, double pdMin, double pdMax, File folder) {
+		public void addChildren(ProgressDialog pd, double pdMin, double pdMax, File folder, boolean followSymbolicLinks) {
 			pd.setTaskTitle(folder.getAbsolutePath());
+			if (!followSymbolicLinks && Files.isSymbolicLink(folder.toPath()))
+				return;
 			
 			File[] files = folder.listFiles((FileFilter) file -> {
 				if (file.isDirectory()) {
@@ -1081,9 +1151,9 @@ public class DiskUsage implements FileMap.GuiContext {
 				double pdStep = (pdMax-pdMin)/files.length;
 				double pdPos = pdMin;
 				for (File file:files) {
-					DiskItem child = addChild(file);
+					DiskItem child = addChild(file,followSymbolicLinks);
 					if (file.isDirectory()) {
-						child.addChildren(pd,pdPos,pdPos+pdStep,file);
+						child.addChildren(pd,pdPos,pdPos+pdStep,file,followSymbolicLinks);
 						pd.setTaskTitle(folder.getAbsolutePath());
 					}
 					pdPos+=pdStep;
@@ -1099,10 +1169,11 @@ public class DiskUsage implements FileMap.GuiContext {
 			return sum;
 		}
 		
-		public void traverse(Consumer<DiskItem> consumer) {
-			consumer.accept(this);
+		public void traverse(boolean childrenFirst, Consumer<DiskItem> consumer) {
+			if (!childrenFirst) consumer.accept(this);
 			for (DiskItem child:children)
-				child.traverse(consumer);
+				child.traverse(childrenFirst,consumer);
+			if ( childrenFirst) consumer.accept(this);
 		}
 	}
 
