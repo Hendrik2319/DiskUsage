@@ -25,6 +25,7 @@ import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Enumeration;
@@ -1128,16 +1129,25 @@ public class DiskUsage implements FileMap.GuiContext {
 			return child.getChild(path, i+1);
 		}
 		
+		private boolean isSymbolicLink(File file) {
+			Path path;
+			try { path = file.toPath(); }
+			catch (Exception e) {
+				System.err.printf("Method \"isSymbolicLink\": Can't convert \"%s\" to Path. -> decide to \"no\"", file);
+				return false;
+			}
+			return Files.isSymbolicLink(path);
+		}
 		public DiskItem addChild(File file, boolean followSymbolicLinks) {
 			DiskItem child = new DiskItem(this,file.getName());
-			boolean isSymbolicLink = !followSymbolicLinks && Files.isSymbolicLink(file.toPath());
+			boolean isSymbolicLink = !followSymbolicLinks && isSymbolicLink(file);
 			child.size_kB = isSymbolicLink ? 0 : (long) Math.ceil(file.length()/1024.0);
 			children.add(child);
 			return child;
 		}
 		public void addChildren(ProgressDialog pd, double pdMin, double pdMax, File folder, boolean followSymbolicLinks) {
 			pd.setTaskTitle(folder.getAbsolutePath());
-			if (!followSymbolicLinks && Files.isSymbolicLink(folder.toPath()))
+			if (!followSymbolicLinks && isSymbolicLink(folder))
 				return;
 			
 			File[] files = folder.listFiles((FileFilter) file -> {
