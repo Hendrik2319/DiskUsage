@@ -1,3 +1,4 @@
-#!/bin/sh
-du -a /media/hdd/ > hdd.diskusage
-mv hdd.diskusage /media/hdd/
+#!/bin/bash 
+file=hdd.$(date +%Y.%m.%d.%H.%M.%S).diskusage
+du -a /media/hdd/ > $file
+mv $file /media/hdd/
