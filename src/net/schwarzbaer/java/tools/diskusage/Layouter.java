@@ -38,7 +38,6 @@ abstract class Layouter {
 	
 	
 	static class GroupLayouter extends Layouter {
-		private static final double MAX_RATIO = 3.0; // 1/X < w/h < X
 	
 		@Override
 		protected void layoutChildren(MapItem[] children, Graphics g, int x, int y, int width, int height) {
@@ -57,36 +56,17 @@ abstract class Layouter {
 				int length = horizontal?width:height;
 				int breadth = horizontal?height:width;
 				
-				double firstBlockAspectRatio = breadth / (children[beginIndex].relativeSize/relGroupSize*length);
-				if (firstBlockAspectRatio<MAX_RATIO || beginIndex+1==endIndex) {
-					// firstBlock uses full width
-					int blockWidth = (int)Math.round( children[beginIndex].relativeSize/relGroupSize*length );
-					if (horizontal) {
-						layoutMapItem(children[beginIndex], g, x,y, blockWidth,height);
-						x += blockWidth;
-						width -= blockWidth;
-					} else {
-						layoutMapItem(children[beginIndex], g, x,y, width,blockWidth);
-						y += blockWidth;
-						height -= blockWidth;
-					}
-					relGroupSize -= children[beginIndex].relativeSize;
-					beginIndex++;
-					continue;
-				}
-				
 				boolean writeCompleteRow = true;
 				double relRowSize = 0.0;
-				for (int i=beginIndex; i<endIndex-1; i++) {
+				for (int i=beginIndex; i<endIndex; i++) {
 					relRowSize += children[i].relativeSize;
 					int blockWidth = (int)Math.round( relRowSize/relGroupSize*length );
 					if (1 <= (i+1-beginIndex)*blockWidth / breadth) {
+						layoutChildrenGroupAsSimpleStrips(children, beginIndex,i+1, relRowSize, g, x,y, !horizontal, breadth, blockWidth);
 						if (horizontal) {
-							layoutChildrenGroup(children, beginIndex,i+1, relRowSize, g, x,y, blockWidth,height);
 							x += blockWidth;
 							width -= blockWidth;
 						} else {
-							layoutChildrenGroup(children, beginIndex,i+1, relRowSize, g, x,y, width,blockWidth);
 							y += blockWidth;
 							height -= blockWidth;
 						}

@@ -34,6 +34,7 @@ import java.util.Properties;
 import java.util.Vector;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import javax.swing.AbstractCellEditor;
 import javax.swing.BorderFactory;
@@ -792,6 +793,10 @@ public class DiskUsage implements FileMap.GuiContext {
 			return e==null?"<null>":e.name();
 		}
 	}
+	
+	private static class ProgressAbortedException extends Exception {
+		private static final long serialVersionUID = 7818542051945043168L;
+	}
 
 	private boolean selectFolder() {
 		if (folderChooser.showOpenDialog(mainWindow) != JFileChooser.APPROVE_OPTION) return false;
@@ -809,12 +814,18 @@ public class DiskUsage implements FileMap.GuiContext {
 			root = new DiskItem();
 			DiskItem folderDI = root.addChild(selectedfolder,followSymbolicLinks);
 			pd.setValue(0, 10000);
-			folderDI.addChildren(pd,0,10000,selectedfolder,followSymbolicLinks);
+			try {
+				folderDI.addChildren(pd,0,10000,selectedfolder,followSymbolicLinks);
+			} catch (ProgressAbortedException e) {
+				root = null;
+			}
 			
-			pd.setTaskTitle("Determine File Types");
-			pd.setIndeterminate(true);
-			
-			DiskItemType.setTypes(root);
+			if (root!=null) {
+				pd.setTaskTitle("Determine File Types");
+				pd.setIndeterminate(true);
+				
+				DiskItemType.setTypes(root);
+			}
 		});
 		treePanel.rootChanged(selectedfolder);
 		fileMapPanel.rootChanged();
@@ -843,6 +854,7 @@ public class DiskUsage implements FileMap.GuiContext {
 				root = new DiskItem();
 				String line;
 				while ( (line=in.readLine())!=null ) {
+					if (Thread.currentThread().isInterrupted()) { root = null; break; }
 					int pos = line.indexOf(0x9);
 					long size_kB = Long.parseLong(line.substring(0,pos));
 					String[] path = line.substring(pos+1).split("/");
@@ -857,10 +869,12 @@ public class DiskUsage implements FileMap.GuiContext {
 				e.printStackTrace();
 			}
 			
-			pd.setTaskTitle("Determine File Types");
-			pd.setIndeterminate(true);
-			
-			DiskItemType.setTypes(root);
+			if (root!=null) {
+				pd.setTaskTitle("Determine File Types");
+				pd.setIndeterminate(true);
+				
+				DiskItemType.setTypes(root);
+			}
 		});
 		treePanel.rootChanged(selectedFile);
 		fileMapPanel.rootChanged();
@@ -875,11 +889,14 @@ public class DiskUsage implements FileMap.GuiContext {
 				pd.setIndeterminate(true);
 				
 				try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(storedTreeChooser.getSelectedFile()), StandardCharsets.UTF_8))) {
-					if (root!=null)
-						root.traverse(true,(DiskItem di)->{
+					if (root!=null) {
+						boolean wasNotInterrupted = root.traverse(Thread.currentThread()::isInterrupted, true,(DiskItem di)->{
 							if (di==root) return;
 							out.printf("%d\t%s%n", di.size_kB, di.getPathStr("/"));
 						});
+						if (!wasNotInterrupted)
+							out.printf("output aborted%n");
+					}
 				} catch (FileNotFoundException e) {
 					e.printStackTrace();
 				}
@@ -1030,7 +1047,7 @@ public class DiskUsage implements FileMap.GuiContext {
 		}
 		public static void setTypes(DiskItem diskItem) {
 			if (diskItem!=null)
-				diskItem.traverse(false,di->{
+				diskItem.traverse(null,false,di->{
 					if (di.children.isEmpty())
 						di.type = DiskItemType.getType(di.name);
 				});
@@ -1145,7 +1162,10 @@ public class DiskUsage implements FileMap.GuiContext {
 			children.add(child);
 			return child;
 		}
-		public void addChildren(ProgressDialog pd, double pdMin, double pdMax, File folder, boolean followSymbolicLinks) {
+		public void addChildren(ProgressDialog pd, double pdMin, double pdMax, File folder, boolean followSymbolicLinks) throws ProgressAbortedException {
+			if (Thread.currentThread().isInterrupted())
+				throw new ProgressAbortedException();
+			
 			pd.setTaskTitle(folder.getAbsolutePath());
 			if (!followSymbolicLinks && isSymbolicLink(folder))
 				return;
@@ -1179,11 +1199,16 @@ public class DiskUsage implements FileMap.GuiContext {
 			return sum;
 		}
 		
-		public void traverse(boolean childrenFirst, Consumer<DiskItem> consumer) {
+		public boolean traverse(Supplier<Boolean> shouldAbort, boolean childrenFirst, Consumer<DiskItem> consumer) {
+			if (shouldAbort!=null && shouldAbort.get()) return false;
 			if (!childrenFirst) consumer.accept(this);
-			for (DiskItem child:children)
-				child.traverse(childrenFirst,consumer);
+			for (DiskItem child:children) {
+				if (shouldAbort!=null && shouldAbort.get()) return false;
+				boolean wasNotAborted = child.traverse(shouldAbort,childrenFirst,consumer);
+				if (!wasNotAborted) return false;
+			}
 			if ( childrenFirst) consumer.accept(this);
+			return true;
 		}
 	}
 
