@@ -1006,9 +1006,7 @@ public class DiskUsage implements FileMap.GuiContext {
 
 		@Override public String toString() { return diskItem.toString(); }
 
-		@SuppressWarnings("rawtypes")
-		@Override
-		public Enumeration children() {
+		@Override public Enumeration<DiskItemTreeNode> children() {
 			if (children==null) createChildren();
 			return new Enumeration<DiskItemTreeNode>() {
 				int index = 0;
