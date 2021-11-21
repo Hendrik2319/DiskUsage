@@ -64,7 +64,6 @@ import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 
 import net.schwarzbaer.gui.FileChooser;
-import net.schwarzbaer.gui.GUI;
 import net.schwarzbaer.gui.HSColorChooser;
 import net.schwarzbaer.gui.HSColorChooser.ColorDialog;
 import net.schwarzbaer.gui.IconSource;
@@ -131,6 +130,13 @@ public class DiskUsage implements FileMap.GuiContext {
 		
 		return this;
 	}
+	
+	private static JTextField createOutputTextField(String initialValue) {
+        JTextField textfield = new JTextField();
+        textfield.setText(initialValue);
+        textfield.setEditable(false);
+        return textfield;
+    }
 	
 	private void showOpenDialog() {
 		new OpenDialog(mainWindow,"Load File Tree").showDialog();
@@ -199,7 +205,7 @@ public class DiskUsage implements FileMap.GuiContext {
 			
 			GBC.setFill(c, GBC.GridFill.BOTH);
 			setBorder(BorderFactory.createTitledBorder("Folder Structure"));
-			add(treeSourceField = GUI.createOutputTextField(getTreeSourceLabel()),GBC.setWeights(c,1,0));
+			add(treeSourceField = createOutputTextField(getTreeSourceLabel()),GBC.setWeights(c,1,0));
 			add(createButton(Icons32.OpenFolder    ,"Select Folder"      ,new Insets(0,0,0,0),e->selectFolder  ()),GBC.setWeights(c,0,0));
 			add(createButton(Icons32.OpenStoredTree,"Open Stored Tree"   ,new Insets(0,0,0,0),e->openStoredTree()),c);
 			add(createButton(Icons32.SaveStoredTree,"Save as Stored Tree",new Insets(0,0,0,0),e->saveStoredTree()),c);
@@ -371,8 +377,8 @@ public class DiskUsage implements FileMap.GuiContext {
 			add(new JLabel("Root Folder: "),GBC.setGridPos(c, 0,0));
 			add(new JLabel("Highlighted File/Folder: "),GBC.setGridPos(c, 0,1));
 			GBC.setWeights(c,1,0);
-			add(fileMapRootPathField = GUI.createOutputTextField(getPathStr(fileMapRoot)),GBC.setGridPos(c, 1,0));
-			add(highlightedPathField = GUI.createOutputTextField(""),GBC.setGridPos(c, 1,1));
+			add(fileMapRootPathField = createOutputTextField(getPathStr(fileMapRoot)),GBC.setGridPos(c, 1,0));
+			add(highlightedPathField = createOutputTextField(""),GBC.setGridPos(c, 1,1));
 			
 			GBC.setGridPos(c, 0,2);
 			GBC.setLineEnd(c);
