@@ -32,6 +32,7 @@ import java.util.Enumeration;
 import java.util.Locale;
 import java.util.Properties;
 import java.util.Vector;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -80,30 +81,17 @@ import net.schwarzbaer.system.ClipboardTools;
 public class DiskUsage implements FileMap.GuiContext {
 
 	private static final String CONFIG_FILE = "DiskUsage.cfg";
+	
+	enum Icons32 { OpenFolder, OpenStoredTree, SaveStoredTree, EditTypes }
+	
+	private static CachedIcons<Icons32> icons32;
+	private static FileChooser storedTreeChooser;
+	private static JFileChooser folderChooser;
 
 	public static void main(String[] args) {
 		try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
 		catch (ClassNotFoundException | InstantiationException | IllegalAccessException | UnsupportedLookAndFeelException e) {}
 		
-		DiskUsage diskUsage = new DiskUsage().readConfig().createGUI();
-//		File file = new File("hdd.diskusage");
-//		if (file.isFile())
-//			diskUsage.openStoredTree(file);
-//		else
-			diskUsage.showOpenDialog();
-	}
-	
-	private DiskItem root;
-	private CachedIcons<Icons32> icons32;
-	private FileChooser storedTreeChooser;
-	private JFileChooser folderChooser;
-	private StandardMainWindow mainWindow;
-	private TreePanel treePanel;
-	private FileMapPanel fileMapPanel;
-	
-	enum Icons32 { OpenFolder, OpenStoredTree, SaveStoredTree, EditTypes }
-	
-	private DiskUsage createGUI() {
 		IconSource<Icons32> icons32source = new IconSource<Icons32>(32,32);
 		icons32source.readIconsFromResource("/icons32.png");
 		icons32 = icons32source.cacheIcons(Icons32.values());
@@ -112,6 +100,31 @@ public class DiskUsage implements FileMap.GuiContext {
 		folderChooser = new JFileChooser("./");
 		folderChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
 		folderChooser.setMultiSelectionEnabled(false);
+		
+		boolean compareFolders = false;
+		for (String arg : args) {
+			if (arg.equalsIgnoreCase("-compare")) compareFolders = true;
+			if (arg.equalsIgnoreCase("compare")) compareFolders = true;
+		}
+		
+		Config.readConfig();
+		
+		if (compareFolders) {
+			DiskUsageCompare diskUsageCompare = new DiskUsageCompare();
+			diskUsageCompare.initialize();
+		} else {
+			DiskUsage diskUsage = new DiskUsage();
+			diskUsage.initialize();
+		}
+	}
+	
+	private DiskItem root;
+	private final StandardMainWindow mainWindow;
+	private final TreePanel treePanel;
+	private final FileMapPanel fileMapPanel;
+	
+	DiskUsage() {
+		mainWindow = new StandardMainWindow("DiskUsage");
 		
 		treePanel = new TreePanel();
 		fileMapPanel = new FileMapPanel();
@@ -122,47 +135,72 @@ public class DiskUsage implements FileMap.GuiContext {
 		contentPane.add(treePanel,BorderLayout.WEST);
 		contentPane.add(fileMapPanel,BorderLayout.CENTER);
 		
-		mainWindow = new StandardMainWindow("DiskUsage");
 		mainWindow.startGUI(contentPane);
-		
+	}
+	
+	private void initialize() {
 		treePanel.rootChanged(null);
 		fileMapPanel.rootChanged();
-		
-		return this;
+		OpenDialog.show(mainWindow, "Load File Tree", this::scanFolder, this::openStoredTree);
 	}
 	
-	private static JTextField createOutputTextField(String initialValue) {
-        JTextField textfield = new JTextField();
-        textfield.setText(initialValue);
-        textfield.setEditable(false);
-        return textfield;
+	static JTextField createOutputTextField(String initialValue) {
+        JTextField comp = new JTextField(initialValue);
+        comp.setEditable(false);
+        return comp;
     }
 	
-	private void showOpenDialog() {
-		new OpenDialog(mainWindow,"Load File Tree").showDialog();
+	static JButton createButton(Icons32 icon, String title, ActionListener al) {
+		return createButton(icon, title, null, al);
+    }
+	
+	static JButton createButton(Icons32 icon, String title, String toolTip, ActionListener al) {
+		JButton comp = new JButton();
+		if (icon   !=null) comp.setIcon(icons32.getCachedIcon(icon));
+		if (title  !=null) comp.setText(title);
+		if (toolTip!=null) comp.setToolTipText(toolTip);
+		if (al     !=null) comp.addActionListener(al);
+		comp.setHorizontalAlignment(JButton.LEFT);
+		return comp;
 	}
 
-	private class OpenDialog extends StandardDialog {
+	static JMenuItem createMenuItem(String title, ActionListener al) {
+		JMenuItem comp = new JMenuItem(title);
+		if (al!=null) comp.addActionListener(al);
+		return comp;
+	}
+
+	static class OpenDialog extends StandardDialog {
 		private static final long serialVersionUID = 2425769711741725154L;
 
-		public OpenDialog(Window parent, String title) {
+		static boolean show(Window parent, String title, Supplier<Boolean> scanFolderFcn, Supplier<Boolean> openStoredTreeFcn) {
+			OpenDialog dlg = new OpenDialog(parent, title, scanFolderFcn, openStoredTreeFcn);
+			dlg.showDialog();
+			return !dlg.wasAborted; 
+		}
+
+		private boolean wasAborted;
+
+		private OpenDialog(Window parent, String title, Supplier<Boolean> scanFolderFcn, Supplier<Boolean> openStoredTreeFcn) {
 			super(parent, title);
+			wasAborted = true;
 			JPanel contentPane = new JPanel(new GridBagLayout());
 			contentPane.setBorder(BorderFactory.createEmptyBorder(20,20,20,20));
 			GridBagConstraints c = new GridBagConstraints();
 			GBC.setFill(c, GBC.GridFill.BOTH);
 			GBC.setLineEnd(c);
 			GBC.setWeights(c,1,1);
-			contentPane.add(createButton(Icons32.OpenFolder    ,"Select Folder"      ,e->{ boolean success = selectFolder  (); if (success) closeDialog(); }),c);
-			contentPane.add(createButton(Icons32.OpenStoredTree,"Open Stored Tree"   ,e->{ boolean success = openStoredTree(); if (success) closeDialog(); }),c);
+			contentPane.add(createButton(Icons32.OpenFolder    ,"Select Folder"   ,e->closeIfSuccessful(scanFolderFcn    )),c);
+			contentPane.add(createButton(Icons32.OpenStoredTree,"Open Stored Tree",e->closeIfSuccessful(openStoredTreeFcn)),c);
 			createGUI(contentPane);
 		}
-		
-		private JButton createButton(Icons32 icon, String title, ActionListener al) {
-			JButton btn = new JButton(title,icons32.getCachedIcon(icon));
-			btn.setHorizontalAlignment(JButton.LEFT);
-			btn.addActionListener(al);
-			return btn;
+
+		private void closeIfSuccessful(Supplier<Boolean> action) {
+			boolean success = action.get();
+			if (success) {
+				wasAborted = false;
+				closeDialog();
+			}
 		}
 	}
 	
@@ -206,7 +244,7 @@ public class DiskUsage implements FileMap.GuiContext {
 			GBC.setFill(c, GBC.GridFill.BOTH);
 			setBorder(BorderFactory.createTitledBorder("Folder Structure"));
 			add(treeSourceField = createOutputTextField(getTreeSourceLabel()),GBC.setWeights(c,1,0));
-			add(createButton(Icons32.OpenFolder    ,"Select Folder"      ,new Insets(0,0,0,0),e->selectFolder  ()),GBC.setWeights(c,0,0));
+			add(createButton(Icons32.OpenFolder    ,"Select Folder"      ,new Insets(0,0,0,0),e->scanFolder    ()),GBC.setWeights(c,0,0));
 			add(createButton(Icons32.OpenStoredTree,"Open Stored Tree"   ,new Insets(0,0,0,0),e->openStoredTree()),c);
 			add(createButton(Icons32.SaveStoredTree,"Save as Stored Tree",new Insets(0,0,0,0),e->saveStoredTree()),c);
 			add(createButton(Icons32.EditTypes     ,"Edit File Types"    ,new Insets(0,0,0,0),e->editFileTypes ()),GBC.setLineEnd(c));
@@ -642,7 +680,6 @@ public class DiskUsage implements FileMap.GuiContext {
 		treePanel.expandPathInTree(diskItems);
 	}
 	
-	public DiskUsage readConfig() { Config.readConfig(); return this;}
 	@Override public void saveConfig() { Config.saveConfig(); }
 	
 	private static class Config {
@@ -804,69 +841,109 @@ public class DiskUsage implements FileMap.GuiContext {
 		private static final long serialVersionUID = 7818542051945043168L;
 	}
 
-	private boolean selectFolder() {
-		if (folderChooser.showOpenDialog(mainWindow) != JFileChooser.APPROVE_OPTION) return false;
-		
-		File selectedfolder = folderChooser.getSelectedFile();
-		
-		int res = JOptionPane.showConfirmDialog(mainWindow, "Follow symbolic links?", "Symbolic Links", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
-		boolean followSymbolicLinks = res==JOptionPane.YES_OPTION;
-		if (res!=JOptionPane.YES_OPTION && res!=JOptionPane.NO_OPTION) return false;
-		
-		ProgressDialog.runWithProgressDialog(mainWindow, "Read Folder", 500, pd->{
-			pd.setTaskTitle("Read Folder");
-			pd.setIndeterminate(true);
+	record ImportedFileData(DiskItem root, File source) {
+
+		private static ImportedFileData importFileData(Window window, String title, JFileChooser fileChooser, BiFunction<Window,File,DiskItem> readFcn) {
+			fileChooser.setDialogTitle(title);
+			if (fileChooser.showOpenDialog(window) != FileChooser.APPROVE_OPTION) return null;
+			File selectedFile = fileChooser.getSelectedFile();
 			
-			root = new DiskItem();
-			DiskItem folderDI = root.addChild(selectedfolder,followSymbolicLinks);
-			pd.setValue(0, 10000);
-			try {
-				folderDI.addChildren(pd,0,10000,selectedfolder,followSymbolicLinks);
-			} catch (ProgressAbortedException e) {
-				root = null;
-			}
+			DiskItem newRoot = readFcn.apply(window, selectedFile);
+			if (newRoot==null) return null;
 			
-			if (root!=null) {
-				pd.setTaskTitle("Determine File Types");
-				pd.setIndeterminate(true);
-				
-				DiskItemType.setTypes(root);
-			}
-		});
-		treePanel.rootChanged(selectedfolder);
+			return new ImportedFileData(newRoot, selectedFile);
+		}
+	}
+	
+	private boolean scanFolder() {
+		return importFileData(window -> scanFolder(window, "Select Folder"));
+	}
+
+	private boolean openStoredTree() {
+		return importFileData(window -> openStoredTree(window, "Select Stored Tree File"));
+	}
+
+	static ImportedFileData scanFolder(Window window, String title) {
+		return ImportedFileData.importFileData(window, title, folderChooser, DiskUsage::scanFolder);
+	}
+
+	static ImportedFileData openStoredTree(Window window, String title) {
+		return ImportedFileData.importFileData(window, title, storedTreeChooser, DiskUsage::openStoredTree);
+	}
+
+	private boolean importFileData(Function<Window,ImportedFileData> readFcn) {
+		ImportedFileData rd = readFcn.apply(mainWindow);
+		if (rd==null) return false;
+		
+		root = rd.root;
+		treePanel.rootChanged(rd.source);
 		fileMapPanel.rootChanged();
 		return true;
 	}
 
-	private boolean openStoredTree() {
-		if (storedTreeChooser.showOpenDialog(mainWindow)==FileChooser.APPROVE_OPTION) {
-			File selectedFile = storedTreeChooser.getSelectedFile();
-			openStoredTree(selectedFile);
-			return true;
-		}
-		return false;
+	private static DiskItem scanFolder(Window window, File selectedfolder) {
+		
+		int res = JOptionPane.showConfirmDialog(window, "Follow symbolic links?", "Symbolic Links", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+		boolean followSymbolicLinks = res==JOptionPane.YES_OPTION;
+		if (res!=JOptionPane.YES_OPTION && res!=JOptionPane.NO_OPTION)
+			return null;
+		
+		return ProgressDialog.runWithProgressDialogRV(window, "Read Folder", 500, pd->{
+			SwingUtilities.invokeLater(()->{
+				pd.setTaskTitle("Read Folder");
+				pd.setIndeterminate(true);
+			});
+			
+			DiskItem newRoot = new DiskItem();
+			
+			DiskItem folderDI = newRoot.addChild(selectedfolder,followSymbolicLinks);
+			SwingUtilities.invokeLater(()->{
+				pd.setValue(0, 10000);
+			});
+			try {
+				folderDI.addChildren(pd,0,10000,selectedfolder,followSymbolicLinks);
+			} catch (ProgressAbortedException e) {
+				newRoot = null;
+			}
+			
+			if (newRoot!=null) {
+				SwingUtilities.invokeLater(()->{
+					pd.setTaskTitle("Determine File Types");
+					pd.setIndeterminate(true);
+				});
+				
+				DiskItemType.setTypes(newRoot);
+			}
+			
+			return newRoot;
+		});
 	}
 
-	private DiskUsage openStoredTree(File selectedFile) {
-		ProgressDialog.runWithProgressDialog(mainWindow, "Read Stored Tree", 300, pd->{
+	private static DiskItem openStoredTree(Window window, File selectedFile) {
+		return ProgressDialog.runWithProgressDialogRV(window, "Read Stored Tree", 300, pd->{
 			
-			pd.setTaskTitle("Read Stored Tree");
 			long fileSize = selectedFile.length();
-			pd.setValue(0, (int) Math.min(Integer.MAX_VALUE, fileSize));
-			//pd.setIndeterminate(true);
+			SwingUtilities.invokeLater(()->{
+				pd.setTaskTitle("Read Stored Tree");
+				pd.setValue(0, (int) Math.min(Integer.MAX_VALUE, fileSize));
+				//pd.setIndeterminate(true);
+			});
 			
-			root = null;
+			
+			DiskItem newRoot = null;
 			try (ByteCounter byteCounter = new ByteCounter(new FileInputStream(selectedFile)); BufferedReader in = new BufferedReader(new InputStreamReader(byteCounter, StandardCharsets.UTF_8),1000000)) {
-				root = new DiskItem();
+				newRoot = new DiskItem();
 				String line;
 				while ( (line=in.readLine())!=null ) {
-					if (Thread.currentThread().isInterrupted()) { root = null; break; }
+					if (Thread.currentThread().isInterrupted()) { newRoot = null; break; }
 					int pos = line.indexOf(0x9);
 					long size_kB = Long.parseLong(line.substring(0,pos));
 					String[] path = line.substring(pos+1).split("/");
-					DiskItem item = root.get(path);
+					DiskItem item = newRoot.get(path);
 					item.size_kB = size_kB;
-					pd.setValue((int) Math.min(Integer.MAX_VALUE, byteCounter.readPos));
+					SwingUtilities.invokeLater(()->{
+						pd.setValue((int) Math.min(Integer.MAX_VALUE, byteCounter.readPos));
+					});
 				}
 				
 			} catch (FileNotFoundException e) {
@@ -875,34 +952,41 @@ public class DiskUsage implements FileMap.GuiContext {
 				e.printStackTrace();
 			}
 			
-			if (root!=null) {
-				pd.setTaskTitle("Determine File Types");
-				pd.setIndeterminate(true);
+			if (newRoot!=null) {
+				SwingUtilities.invokeLater(()->{
+					pd.setTaskTitle("Determine File Types");
+					pd.setIndeterminate(true);
+				});
 				
-				DiskItemType.setTypes(root);
+				DiskItemType.setTypes(newRoot);
 			}
+			
+			return newRoot;
 		});
-		treePanel.rootChanged(selectedFile);
-		fileMapPanel.rootChanged();
-		return this;
 	}
 
 	private void saveStoredTree() {
-		if (storedTreeChooser.showSaveDialog(mainWindow)==FileChooser.APPROVE_OPTION) {
-			ProgressDialog.runWithProgressDialog(mainWindow, "Write Stored Tree", 300, pd->{
+		saveStoredTree(mainWindow, "Select Stored Tree File", root);
+	}
+
+	static void saveStoredTree(Window window, String title, DiskItem root) {
+		if (root == null) return;
+		storedTreeChooser.setDialogTitle(title);
+		if (storedTreeChooser.showSaveDialog(window)==FileChooser.APPROVE_OPTION) {
+			ProgressDialog.runWithProgressDialog(window, "Write Stored Tree", 300, pd->{
 				
-				pd.setTaskTitle("Write Stored Tree");
-				pd.setIndeterminate(true);
+				SwingUtilities.invokeLater(()->{
+					pd.setTaskTitle("Write Stored Tree");
+					pd.setIndeterminate(true);
+				});
 				
 				try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(storedTreeChooser.getSelectedFile()), StandardCharsets.UTF_8))) {
-					if (root!=null) {
-						boolean wasNotInterrupted = root.traverse(Thread.currentThread()::isInterrupted, true,(DiskItem di)->{
-							if (di==root) return;
-							out.printf("%d\t%s%n", di.size_kB, di.getPathStr("/"));
-						});
-						if (!wasNotInterrupted)
-							out.printf("output aborted%n");
-					}
+					boolean wasNotInterrupted = root.traverse(Thread.currentThread()::isInterrupted, true,(DiskItem di)->{
+						if (di==root) return;
+						out.printf("%d\t%s%n", di.size_kB, di.getPathStr("/"));
+					});
+					if (!wasNotInterrupted)
+						out.printf("output aborted%n");
 				} catch (FileNotFoundException e) {
 					e.printStackTrace();
 				}
@@ -1089,9 +1173,9 @@ public class DiskUsage implements FileMap.GuiContext {
 	static class DiskItem {
 
 		final DiskItem parent;
+		final Vector<DiskItem> children;
 		final String name; 
 		long size_kB = 0;
-		Vector<DiskItem> children;
 		DiskItemType type = null;
 
 		public DiskItem() { this(null,"<root>"); }
@@ -1124,7 +1208,10 @@ public class DiskUsage implements FileMap.GuiContext {
 			return String.format("[ %s ]   %s", getSizeStr(), name);
 		}
 		
-		public String getSizeStr() {
+		String getSizeStr() {
+			return getSizeStr(size_kB);
+		}
+		static String getSizeStr(long size_kB) {
 			if (size_kB<1024) return size_kB+" kB";
 			double sizeD;
 			sizeD = size_kB/1024.0; if (sizeD<1024) return String.format(Locale.ENGLISH, "%1.2f MB", sizeD);
@@ -1170,7 +1257,9 @@ public class DiskUsage implements FileMap.GuiContext {
 			if (Thread.currentThread().isInterrupted())
 				throw new ProgressAbortedException();
 			
-			pd.setTaskTitle(folder.getAbsolutePath());
+			SwingUtilities.invokeLater(()->{
+				pd.setTaskTitle(folder.getAbsolutePath());
+			});
 			if (!followSymbolicLinks && isSymbolicLink(folder))
 				return;
 			
@@ -1188,10 +1277,15 @@ public class DiskUsage implements FileMap.GuiContext {
 					DiskItem child = addChild(file,followSymbolicLinks);
 					if (file.isDirectory()) {
 						child.addChildren(pd,pdPos,pdPos+pdStep,file,followSymbolicLinks);
-						pd.setTaskTitle(folder.getAbsolutePath());
+						SwingUtilities.invokeLater(()->{
+							pd.setTaskTitle(folder.getAbsolutePath());
+						});
 					}
 					pdPos+=pdStep;
-					pd.setValue((int)pdPos);
+					int pdPos_ = (int) Math.round(pdPos);
+					SwingUtilities.invokeLater(()->{
+						pd.setValue(pdPos_);
+					});
 				}
 			}
 			size_kB += sumSizeOfChildren();
