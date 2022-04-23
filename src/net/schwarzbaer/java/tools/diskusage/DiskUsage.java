@@ -40,6 +40,7 @@ import java.util.function.Supplier;
 import javax.swing.AbstractCellEditor;
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
+import javax.swing.Icon;
 import javax.swing.JButton;
 import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JFileChooser;
@@ -76,18 +77,27 @@ import net.schwarzbaer.gui.Tables;
 import net.schwarzbaer.gui.Tables.LabelRendererComponent;
 import net.schwarzbaer.gui.Tables.SimplifiedColumnConfig;
 import net.schwarzbaer.image.bumpmapping.BumpMapping.Normal;
+import net.schwarzbaer.java.tools.diskusagecompare.DiskUsageCompare;
 import net.schwarzbaer.system.ClipboardTools;
 
 public class DiskUsage implements FileMap.GuiContext {
 
 	private static final String CONFIG_FILE = "DiskUsage.cfg";
 	
-	enum Icons32 { OpenFolder, OpenStoredTree, SaveStoredTree, EditTypes }
+	public enum Icons32 {
+		OpenFolder, OpenStoredTree, SaveStoredTree, EditTypes;
+		public Icon getCacheIcon() { return icons32.getCachedIcon(this); }
+	}
+	public enum Icons16 {
+		Folder, OpenStoredTree, EmptyFile, SaveStoredTree;
+		public Icon getCacheIcon() { return icons16.getCachedIcon(this); }
+	}
 	
 	private static CachedIcons<Icons32> icons32;
+	private static CachedIcons<Icons16> icons16;
 	private static FileChooser storedTreeChooser;
 	private static JFileChooser folderChooser;
-
+	
 	public static void main(String[] args) {
 		try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
 		catch (ClassNotFoundException | InstantiationException | IllegalAccessException | UnsupportedLookAndFeelException e) {}
@@ -95,6 +105,10 @@ public class DiskUsage implements FileMap.GuiContext {
 		IconSource<Icons32> icons32source = new IconSource<Icons32>(32,32);
 		icons32source.readIconsFromResource("/icons32.png");
 		icons32 = icons32source.cacheIcons(Icons32.values());
+		
+		IconSource<Icons16> icons16source = new IconSource<Icons16>(16,16);
+		icons16source.readIconsFromResource("/icons16.png");
+		icons16 = icons16source.cacheIcons(Icons16.values());
 		
 		storedTreeChooser = new FileChooser("Stored Tree", "diskusage");
 		folderChooser = new JFileChooser("./");
@@ -144,19 +158,32 @@ public class DiskUsage implements FileMap.GuiContext {
 		OpenDialog.show(mainWindow, "Load File Tree", this::scanFolder, this::openStoredTree);
 	}
 	
-	static JTextField createOutputTextField(String initialValue) {
+	public static JTextField createOutputTextField(String initialValue) {
         JTextField comp = new JTextField(initialValue);
         comp.setEditable(false);
         return comp;
     }
 	
-	static JButton createButton(Icons32 icon, String title, ActionListener al) {
-		return createButton(icon, title, null, al);
+	public static JButton createButton(Icons16 icon, String title, ActionListener al) {
+		return createButton(null, icon, title, null, al);
     }
 	
-	static JButton createButton(Icons32 icon, String title, String toolTip, ActionListener al) {
+	public static JButton createButton(Icons32 icon, String title, ActionListener al) {
+		return createButton(icon, null, title, null, al);
+    }
+	
+	public static JButton createButton(Icons16 icon, String title, String toolTip, ActionListener al) {
+		return createButton(null, icon, title, toolTip, al);
+    }
+	
+	public static JButton createButton(Icons32 icon, String title, String toolTip, ActionListener al) {
+		return createButton(icon, null, title, toolTip, al);
+    }
+	
+	public static JButton createButton(Icons32 icon32, Icons16 icon16, String title, String toolTip, ActionListener al) {
 		JButton comp = new JButton();
-		if (icon   !=null) comp.setIcon(icons32.getCachedIcon(icon));
+		if (icon32 !=null) comp.setIcon(icons32.getCachedIcon(icon32));
+		if (icon16 !=null) comp.setIcon(icons16.getCachedIcon(icon16));
 		if (title  !=null) comp.setText(title);
 		if (toolTip!=null) comp.setToolTipText(toolTip);
 		if (al     !=null) comp.addActionListener(al);
@@ -164,16 +191,16 @@ public class DiskUsage implements FileMap.GuiContext {
 		return comp;
 	}
 
-	static JMenuItem createMenuItem(String title, ActionListener al) {
+	public static JMenuItem createMenuItem(String title, ActionListener al) {
 		JMenuItem comp = new JMenuItem(title);
 		if (al!=null) comp.addActionListener(al);
 		return comp;
 	}
 
-	static class OpenDialog extends StandardDialog {
+	public static class OpenDialog extends StandardDialog {
 		private static final long serialVersionUID = 2425769711741725154L;
 
-		static boolean show(Window parent, String title, Supplier<Boolean> scanFolderFcn, Supplier<Boolean> openStoredTreeFcn) {
+		public static boolean show(Window parent, String title, Supplier<Boolean> scanFolderFcn, Supplier<Boolean> openStoredTreeFcn) {
 			OpenDialog dlg = new OpenDialog(parent, title, scanFolderFcn, openStoredTreeFcn);
 			dlg.showDialog();
 			return !dlg.wasAborted; 
@@ -841,7 +868,7 @@ public class DiskUsage implements FileMap.GuiContext {
 		private static final long serialVersionUID = 7818542051945043168L;
 	}
 
-	record ImportedFileData(DiskItem root, File source) {
+	public record ImportedFileData(DiskItem root, File source) {
 
 		private static ImportedFileData importFileData(Window window, String title, JFileChooser fileChooser, BiFunction<Window,File,DiskItem> readFcn) {
 			fileChooser.setDialogTitle(title);
@@ -863,11 +890,11 @@ public class DiskUsage implements FileMap.GuiContext {
 		return importFileData(window -> openStoredTree(window, "Select Stored Tree File"));
 	}
 
-	static ImportedFileData scanFolder(Window window, String title) {
+	public static ImportedFileData scanFolder(Window window, String title) {
 		return ImportedFileData.importFileData(window, title, folderChooser, DiskUsage::scanFolder);
 	}
 
-	static ImportedFileData openStoredTree(Window window, String title) {
+	public static ImportedFileData openStoredTree(Window window, String title) {
 		return ImportedFileData.importFileData(window, title, storedTreeChooser, DiskUsage::openStoredTree);
 	}
 
@@ -969,7 +996,7 @@ public class DiskUsage implements FileMap.GuiContext {
 		saveStoredTree(mainWindow, "Select Stored Tree File", root);
 	}
 
-	static void saveStoredTree(Window window, String title, DiskItem root) {
+	public static void saveStoredTree(Window window, String title, DiskItem root) {
 		if (root == null) return;
 		storedTreeChooser.setDialogTitle(title);
 		if (storedTreeChooser.showSaveDialog(window)==FileChooser.APPROVE_OPTION) {
@@ -1170,12 +1197,12 @@ public class DiskUsage implements FileMap.GuiContext {
 		}
 	}
 
-	static class DiskItem {
+	public static class DiskItem {
 
 		final DiskItem parent;
-		final Vector<DiskItem> children;
-		final String name; 
-		long size_kB = 0;
+		public final Vector<DiskItem> children;
+		public final String name; 
+		public long size_kB = 0;
 		DiskItemType type = null;
 
 		public DiskItem() { this(null,"<root>"); }
@@ -1208,10 +1235,10 @@ public class DiskUsage implements FileMap.GuiContext {
 			return String.format("[ %s ]   %s", getSizeStr(), name);
 		}
 		
-		String getSizeStr() {
+		public String getSizeStr() {
 			return getSizeStr(size_kB);
 		}
-		static String getSizeStr(long size_kB) {
+		public static String getSizeStr(long size_kB) {
 			if (size_kB<1024) return size_kB+" kB";
 			double sizeD;
 			sizeD = size_kB/1024.0; if (sizeD<1024) return String.format(Locale.ENGLISH, "%1.2f MB", sizeD);

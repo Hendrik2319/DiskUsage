@@ -1,6 +1,10 @@
-package net.schwarzbaer.java.tools.diskusage;
+package net.schwarzbaer.java.tools.diskusagecompare;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.Graphics;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Window;
@@ -10,6 +14,7 @@ import java.util.Locale;
 import java.util.Vector;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
@@ -22,8 +27,12 @@ import javax.swing.JSplitPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
 import javax.swing.JTree;
+import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import javax.swing.event.TreeSelectionEvent;
 import javax.swing.event.TreeSelectionListener;
+import javax.swing.table.TableCellRenderer;
+import javax.swing.tree.DefaultTreeCellRenderer;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
@@ -31,10 +40,16 @@ import javax.swing.tree.TreePath;
 import net.schwarzbaer.gui.StandardMainWindow;
 import net.schwarzbaer.gui.Tables;
 import net.schwarzbaer.gui.Tables.SimplifiedColumnConfig;
+import net.schwarzbaer.java.tools.diskusage.DiskUsage;
 import net.schwarzbaer.java.tools.diskusage.DiskUsage.DiskItem;
+import net.schwarzbaer.java.tools.diskusage.DiskUsage.Icons16;
 import net.schwarzbaer.java.tools.diskusage.DiskUsage.ImportedFileData;
+import net.schwarzbaer.java.tools.diskusagecompare.DiskUsageCompare.AppSettings.ValueKey;
+import net.schwarzbaer.system.Settings;
 
-class DiskUsageCompare {
+public class DiskUsageCompare {
+	
+	private static final AppSettings settings = new AppSettings();
 	
 	private final StandardMainWindow mainWindow;
 	private final SourceFieldRow oldDataField;
@@ -43,25 +58,26 @@ class DiskUsageCompare {
 	private final JTree tree;
 	private final FileTableModel fileTableModel;
 	private final JTable fileTable;
-
-	DiskUsageCompare() {
+	
+	public DiskUsageCompare() {
 		mainWindow = new StandardMainWindow("DiskUsageCompare");
 		
 		root = new CompareDiskItem(null);
 		
 		tree = new JTree((TreeNode)null);
+		tree.getSelectionModel().addTreeSelectionListener(new CDITreeSelectionListener());
+		tree.setCellRenderer(new CDITreeCellRenderer());
 		JScrollPane treePanel = new JScrollPane(tree);
 		
 		fileTableModel = new FileTableModel();
 		fileTable = new JTable(fileTableModel);
 		fileTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+		fileTableModel.setTable(fileTable);
+		fileTableModel.setColumnWidths(fileTable);
+		fileTableModel.setDefaultRenderers();
 		JScrollPane fileTablePanel = new JScrollPane(fileTable);
 		
-		tree.getSelectionModel().addTreeSelectionListener(new CDITreeSelectionListener());
-		
 		JSplitPane mainPanel = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, true, treePanel, fileTablePanel);
-		mainPanel.setResizeWeight(1);
-		mainPanel.setDividerLocation(400);
 		
 		
 		JPanel sourceFieldPanel = new JPanel(new GridBagLayout());
@@ -80,7 +96,18 @@ class DiskUsageCompare {
 		contentPane.add(sourceFieldPanel,BorderLayout.NORTH);
 		contentPane.add(mainPanel,BorderLayout.CENTER);
 		
-		mainWindow.startGUI(contentPane, createMenuBar(), 800,600);
+		mainWindow.startGUI(contentPane, createMenuBar());
+		settings.registerAppWindow(mainWindow, 800,600);
+		
+		mainPanel.setResizeWeight(1);
+		int initialPos = settings.getInt(ValueKey.DividerLocation, 400);
+		SwingUtilities.invokeLater(()->mainPanel.setDividerLocation(initialPos));
+		mainPanel.addPropertyChangeListener("dividerLocation", e -> {
+			System.out.printf("[#] Property Changed: [%s] %s >> %s%n", e.getPropertyName(), e.getOldValue(), e.getNewValue());
+			Object newValue = e.getNewValue();
+			if (newValue instanceof Integer)
+				settings.putInt(ValueKey.DividerLocation, (Integer) newValue);
+		});
 	}
 
 	private JMenuBar createMenuBar() {
@@ -94,13 +121,26 @@ class DiskUsageCompare {
 		return menuBar;
 	}
 	
-	void initialize() {
+	public void initialize() {
 		boolean success = true;
 		if (success) success = DiskUsage.OpenDialog.show(mainWindow, "Load Old File Tree", oldDataField::scanFolder, oldDataField::openStoredTree);
 		if (success) success = DiskUsage.OpenDialog.show(mainWindow, "Load New File Tree", newDataField::scanFolder, newDataField::openStoredTree);
 	}
 	
-	private final class CDITreeSelectionListener implements TreeSelectionListener {
+	static class AppSettings extends Settings.DefaultAppSettings<AppSettings.ValueGroup, AppSettings.ValueKey> {
+		public enum ValueKey { DividerLocation }
+	
+		enum ValueGroup implements Settings.GroupKeys<ValueKey> {
+			;
+			ValueKey[] keys;
+			ValueGroup(ValueKey...keys) { this.keys = keys;}
+			@Override public ValueKey[] getKeys() { return keys; }
+		}
+		
+		public AppSettings() { super(DiskUsageCompare.class, ValueKey.values()); }
+	}
+	
+	private class CDITreeSelectionListener implements TreeSelectionListener {
 		
 		private TreePath selectedPath;
 		private CompareDiskItem selectedCDI;
@@ -117,13 +157,36 @@ class DiskUsageCompare {
 			if (obj instanceof CompareDiskItem) {
 				selectedCDI = (CompareDiskItem) obj;
 				fileTableModel.setData(selectedCDI);
-//				System.out.printf("Selected Path: %s%n", selectedPath);
-//				System.out.printf("Selected CDI: %s%n", selectedCDI);
-			} else {
-//				System.out.printf("Selected Path: %s%n", selectedPath);
-//				System.out.printf("Selected CDI: %s%n", obj);
 			}
 		}
+	}
+
+	private static class CDITreeCellRenderer extends DefaultTreeCellRenderer {
+		private static final long serialVersionUID = 5384713374169384548L;
+		
+		CDITreeCellRenderer() {
+			setLeafIcon  (Icons16.EmptyFile.getCacheIcon());
+			setOpenIcon  (Icons16.Folder.getCacheIcon());
+			setClosedIcon(Icons16.Folder.getCacheIcon());
+		}
+	
+		@Override
+		public Component getTreeCellRendererComponent(JTree tree, Object value, boolean isSelected, boolean isExpanded, boolean isLeaf, int row, boolean hasFocus) {
+			Component component = super.getTreeCellRendererComponent(tree, value, isSelected, isExpanded, isLeaf, row, hasFocus);
+			if (value instanceof CompareDiskItem) {
+				CompareDiskItem cdi = (CompareDiskItem) value;
+				if (!isSelected) {
+					Color textColor = cdi.getTextColor();
+					setForeground(textColor);
+				}
+			} else {
+				if (!isSelected) {
+					setForeground(null);
+				}
+			}
+			return component;
+		}
+		
 	}
 
 	private static class CompareDiskItem implements TreeNode {
@@ -136,6 +199,11 @@ class DiskUsageCompare {
 		private static final Comparator<DiskItem> DISKITEM_ORDER =
 				Comparator
 				.<DiskItem,String>comparing(di->di.name,NAME_ORDER);
+
+		private static final Color TEXT_COLOR_ADDED        = new Color(0xFF0000);
+		private static final Color TEXT_COLOR_REMOVED      = new Color(0x0064FF);
+		private static final Color TEXT_COLOR_SIZE_RAISED  = new Color(0xFF00FF);
+		private static final Color TEXT_COLOR_SIZE_LOWERED = new Color(0x00C7FF);
 		
 		enum DataType {
 			OldData,
@@ -350,6 +418,21 @@ class DiskUsageCompare {
 			}
 		}
 
+		Color getTextColor() {
+			if (oldData==null && newData==null) return null;
+			
+			if (oldData==null) return TEXT_COLOR_ADDED;
+			if (newData==null) return TEXT_COLOR_REMOVED;
+			
+			if (oldData.size_kB == newData.size_kB) return null;
+			
+			if (oldData.size_kB==0) return TEXT_COLOR_ADDED;
+			if (newData.size_kB==0) return TEXT_COLOR_REMOVED;
+			
+			if (oldData.size_kB < newData.size_kB) return TEXT_COLOR_SIZE_RAISED;
+			else                                   return TEXT_COLOR_SIZE_LOWERED;
+		}
+		
 		@Override public String toString() {
 			if (oldData==null && newData==null)
 				return String.format("%s <EMPTY>", name);
@@ -363,13 +446,30 @@ class DiskUsageCompare {
 			if (oldData.size_kB==0 || newData.size_kB==0)
 				return String.format("%s [%s >> %s]", name, oldData.getSizeStr(), newData.getSizeStr());
 			
-			double diff_percent = (newData.size_kB/(double)oldData.size_kB-1)*100;
-			String diff_abs_Str = DiskItem.getSizeStr(Math.abs(newData.size_kB-oldData.size_kB));
-			
-			if (oldData.size_kB < newData.size_kB) {
-				return String.format(Locale.ENGLISH, "%s [%s >> %s] +%s (+%1.2f%%)", name, oldData.getSizeStr(), newData.getSizeStr(), diff_abs_Str, diff_percent);
-			} else
-				return String.format(Locale.ENGLISH, "%s [%s >> %s] -%s (%1.2f%%)", name, oldData.getSizeStr(), newData.getSizeStr(), diff_abs_Str, diff_percent);
+			String sizeChangeStr = getSizeChangeStr(oldData.size_kB, newData.size_kB);
+			return String.format("%s [%s >> %s] %s", name, oldData.getSizeStr(), newData.getSizeStr(), sizeChangeStr);
+		}
+
+		private static String getSizeChangeStr(long oldSize, long newSize) {
+			String valueStr = "";
+			if (newSize!=oldSize) {
+				long diff = Math.abs(newSize-oldSize);
+				valueStr = (oldSize < newSize ? "+" : "-") + DiskItem.getSizeStr(diff);
+				if (oldSize>0) {
+					double change = newSize/(double)oldSize;
+					if (change <= 20) {
+						change = (change-1)*100;
+						if (change>0)
+							valueStr += String.format(Locale.ENGLISH, " (+%1.2f%%)", change);
+						else
+							valueStr += String.format(Locale.ENGLISH, " (%1.2f%%)", change);
+						
+					} else if (change <= 2000) {
+						valueStr += String.format(Locale.ENGLISH, " (%1.2fx)", change);
+					}
+				}
+			}
+			return valueStr;
 		}
 		
 		@Override public TreeNode getChildAt(int childIndex) {
@@ -390,13 +490,13 @@ class DiskUsageCompare {
 		
 		private final Window parent;
 		private final String title;
-		private final Consumer<DiskUsage.DiskItem> setRoot;
+		private final Consumer<DiskItem> setRoot;
 		private final JTextField outputField;
 		private final JButton btnSaveStoredTree;
 
 		private ImportedFileData ifd;
 
-		SourceFieldRow(Window parent, JPanel panel, String title, Consumer<DiskUsage.DiskItem> setRoot) {
+		SourceFieldRow(Window parent, JPanel panel, String title, Consumer<DiskItem> setRoot) {
 			this.parent = parent;
 			this.title = title;
 			this.setRoot = setRoot;
@@ -411,10 +511,10 @@ class DiskUsageCompare {
 			c.weightx = 1;
 			panel.add(outputField = DiskUsage.createOutputTextField(""),c);
 			c.weightx = 0;
-			panel.add(DiskUsage.createButton(DiskUsage.Icons32.OpenFolder    , null, "Scan Folder"     , e->scanFolder    ()),c);
-			panel.add(DiskUsage.createButton(DiskUsage.Icons32.OpenStoredTree, null, "Open Stored Tree", e->openStoredTree()),c);
+			panel.add(DiskUsage.createButton(Icons16.Folder, null, "Scan Folder"     , e->scanFolder    ()),c);
+			panel.add(DiskUsage.createButton(Icons16.OpenStoredTree, null, "Open Stored Tree", e->openStoredTree()),c);
 			c.gridwidth = GridBagConstraints.REMAINDER;
-			btnSaveStoredTree = DiskUsage.createButton(DiskUsage.Icons32.SaveStoredTree, null, "Save as Stored Tree", e->saveStoredTree());
+			btnSaveStoredTree = DiskUsage.createButton(Icons16.SaveStoredTree, null, "Save as Stored Tree", e->saveStoredTree());
 			btnSaveStoredTree.setEnabled(false);
 			panel.add(btnSaveStoredTree,c);
 		}
@@ -423,8 +523,8 @@ class DiskUsageCompare {
 		boolean scanFolder    () { return importData(DiskUsage::scanFolder    , String.format("Select Folder for %s"          , title)); }
 		boolean openStoredTree() { return importData(DiskUsage::openStoredTree, String.format("Select Stored Tree File for %s", title)); }
 		
-		private boolean importData(BiFunction<Window,String,DiskUsage.ImportedFileData> importFcn, String dlgTitle) {
-			DiskUsage.ImportedFileData ifd = importFcn.apply(parent, dlgTitle);
+		private boolean importData(BiFunction<Window,String,ImportedFileData> importFcn, String dlgTitle) {
+			ImportedFileData ifd = importFcn.apply(parent, dlgTitle);
 			if (ifd==null) return false;
 			this.ifd = ifd;
 			setRoot.accept(this.ifd.root());
@@ -437,9 +537,10 @@ class DiskUsageCompare {
 	private static class FileTableModel extends Tables.SimplifiedTableModel<FileTableModel.ColumnID> {
 
 		enum ColumnID implements Tables.SimplifiedColumnIDInterface {
-			Name    ("Name"     ,  String.class, 500),
-			SizeOld ("Size (Old)",   Long.class,  80),
-			SizeNew ("Size (New)",   Long.class,  80),
+			Name    ("Name"      ,          String.class, 500),
+			SizeOld ("Size (Old)",            Long.class,  80),
+			SizeNew ("Size (New)",            Long.class,  80),
+			Change  ("Change"    , CompareDiskItem.class, 150),
 			;
 		
 			private final SimplifiedColumnConfig config;
@@ -451,14 +552,108 @@ class DiskUsageCompare {
 		}
 
 		private Vector<CompareDiskItem> data;
+		private long maxSize;
 
 		private FileTableModel() {
 			super(ColumnID.values());
 			data = null;
+			maxSize = -1;
+		}
+
+		private class CellRenderer implements TableCellRenderer {
+			
+			private final RendererComponent rendererComp;
+
+			CellRenderer() {
+				rendererComp = new RendererComponent();
+			}
+		
+			@Override
+			public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int rowV, int columnV) {
+				String valueStr = "";
+				int rowM = table.convertRowIndexToModel(rowV);
+				CompareDiskItem cdi = getRow(rowM);
+				Supplier<Color> getCustomForeground = ()->cdi!=null ? cdi.getTextColor() : null;
+				
+				if (value instanceof String) {
+					valueStr = (String) value;
+					rendererComp.setHorizontalAlignment(SwingConstants.LEFT);
+				}
+				
+				if (value instanceof Long) {
+					long size = (Long) value;
+					valueStr = DiskItem.getSizeStr(size);
+					rendererComp.setHorizontalAlignment(SwingConstants.RIGHT);
+				}
+				
+				if (value instanceof CompareDiskItem) {
+					//CompareDiskItem cdi = (CompareDiskItem) value;
+					long oldSize = cdi==null || cdi.oldData==null ? 0 : cdi.oldData.size_kB;
+					long newSize = cdi==null || cdi.newData==null ? 0 : cdi.newData.size_kB;
+					
+					if (isSelected) {
+						rendererComp.showNormalText();
+						valueStr = CompareDiskItem.getSizeChangeStr(oldSize, newSize);
+						
+					} else
+						rendererComp.showSizeChangeBars(oldSize,newSize);
+					
+				} else
+					rendererComp.showNormalText();
+				
+				rendererComp.configureAsTableCellRendererComponent(table, null, valueStr, isSelected, hasFocus, null, getCustomForeground);
+				return rendererComp;
+			}
+			
+			private class RendererComponent extends Tables.LabelRendererComponent {
+				private static final long serialVersionUID = -4420622976770539528L;
+				private boolean showSizeChangeBars = false;
+				private long oldSize = 0;
+				private long newSize = 0;
+
+				@Override
+				protected void paintComponent(Graphics g) {
+					if (showSizeChangeBars) {
+						Dimension size = getSize();
+						
+						int rect1Width = (int) Math.round( Math.min(oldSize,  newSize) / (double)maxSize * (size.width-2) );
+						int rect2Width = (int) Math.round( Math.abs(oldSize - newSize) / (double)maxSize * (size.width-2) );
+						Color rect1Color = Color.GRAY;
+						Color rect2Color = oldSize < newSize ? CompareDiskItem.TEXT_COLOR_ADDED : CompareDiskItem.TEXT_COLOR_REMOVED;
+						
+						g.setColor(rect1Color); g.fillRect(1           , 1, rect1Width, size.height-2);
+						g.setColor(rect2Color); g.fillRect(1+rect1Width, 1, rect2Width, size.height-2);
+						
+						setBackground(null);
+						setOpaque(false);
+					}
+					super.paintComponent(g);
+				}
+
+				void showNormalText() { showSizeChangeBars = false; }
+
+				void showSizeChangeBars(long oldSize, long newSize) {
+					this.oldSize = oldSize;
+					this.newSize = newSize;
+					showSizeChangeBars = true;
+				}
+			}
+		}
+
+		public void setDefaultRenderers() {
+			CellRenderer renderer = new CellRenderer();
+			table.setDefaultRenderer(String.class, renderer);
+			table.setDefaultRenderer(Long.class, renderer);
+			table.setDefaultRenderer(CompareDiskItem.class, renderer);
 		}
 
 		void setData(CompareDiskItem cdi) {
 			data = cdi.getChildren();
+			maxSize = 0;
+			for (CompareDiskItem cdiChild : data) {
+				if (cdiChild.oldData!=null && maxSize<cdiChild.oldData.size_kB) maxSize = cdiChild.oldData.size_kB;
+				if (cdiChild.newData!=null && maxSize<cdiChild.newData.size_kB) maxSize = cdiChild.newData.size_kB;
+			}
 			fireTableUpdate();
 		}
 
@@ -478,6 +673,7 @@ class DiskUsageCompare {
 			case Name   : return cdi.name;
 			case SizeNew: return cdi.newData==null ? null : cdi.newData.size_kB;
 			case SizeOld: return cdi.oldData==null ? null : cdi.oldData.size_kB;
+			case Change : return cdi;
 			}
 			return null;
 		}
