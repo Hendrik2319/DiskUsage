@@ -103,7 +103,7 @@ public class DiskUsageCompare {
 		int initialPos = settings.getInt(ValueKey.DividerLocation, 400);
 		SwingUtilities.invokeLater(()->mainPanel.setDividerLocation(initialPos));
 		mainPanel.addPropertyChangeListener("dividerLocation", e -> {
-			System.out.printf("[#] Property Changed: [%s] %s >> %s%n", e.getPropertyName(), e.getOldValue(), e.getNewValue());
+			//System.out.printf("[#] Property Changed: [%s] %s >> %s%n", e.getPropertyName(), e.getOldValue(), e.getNewValue());
 			Object newValue = e.getNewValue();
 			if (newValue instanceof Integer)
 				settings.putInt(ValueKey.DividerLocation, (Integer) newValue);
