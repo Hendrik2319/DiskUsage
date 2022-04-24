@@ -897,7 +897,7 @@ public class DiskUsage implements FileMap.GuiContext {
 	}
 
 	public static ImportedFileData openStoredTree(Window window, String title) {
-		return ImportedFileData.importFileData(window, title, storedTreeChooser, DiskUsage::openStoredTree);		//String[] values = new String[] {"Old Algorithm","New Algorithm","New Algorithm (Details)"};
+		return ImportedFileData.importFileData(window, title, storedTreeChooser, DiskUsage::openStoredTree);
 		
 		//String[] values = new String[] {"Old Algorithm","New Algorithm","New Algorithm (Details)"};
 		//String dlgTitle = "Algorithm for Reading StoredTree";
