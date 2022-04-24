@@ -72,6 +72,7 @@ import net.schwarzbaer.gui.HSColorChooser.ColorDialog;
 import net.schwarzbaer.gui.IconSource;
 import net.schwarzbaer.gui.IconSource.CachedIcons;
 import net.schwarzbaer.gui.ProgressDialog;
+import net.schwarzbaer.gui.ProgressDialog.ProgressDisplay;
 import net.schwarzbaer.gui.StandardDialog;
 import net.schwarzbaer.gui.StandardMainWindow;
 import net.schwarzbaer.gui.Tables;
@@ -898,16 +899,16 @@ public class DiskUsage implements FileMap.GuiContext {
 
 	public static ImportedFileData openStoredTree(Window window, String title) {
 		
-		String[] values = new String[] {"Old Algorithm","New Algorithm"};
+		String[] values = new String[] {"Old Algorithm","New Algorithm","New Algorithm (Details)"};
 		String dlgTitle = "Algorithm for Reading StoredTree";
 		String dlgMessage = "Select algorithm for reading StoredTree:";
-		Object result = JOptionPane.showInputDialog(window, dlgMessage, dlgTitle, JOptionPane.QUESTION_MESSAGE, null, values, values[0]);
+		Object result = JOptionPane.showInputDialog(window, dlgMessage, dlgTitle, JOptionPane.QUESTION_MESSAGE, null, values, values[1]);
 		
 		Vector<String> valuesVec = new Vector<>(Arrays.asList(values));
 		int algo = valuesVec.indexOf(result);
 		if (algo<0) return null;
 		
-		return ImportedFileData.importFileData(window, title, storedTreeChooser, (t, u) -> DiskUsage.openStoredTree(t, u, algo));
+		return ImportedFileData.importFileData(window, title, storedTreeChooser, (t, u) -> DiskUsage.openStoredTree(t, u, algo, values[algo]));
 	}
 
 	private boolean importFileData(Function<Window,ImportedFileData> readFcn) {
@@ -963,25 +964,29 @@ public class DiskUsage implements FileMap.GuiContext {
 		});
 	}
 
-	private static DiskItem openStoredTree(Window window, File selectedFile, int algo) {
+	private static DiskItem openStoredTree(Window window, File selectedFile, int algo, String algoName) {
 		return ProgressDialog.runWithProgressDialogRV(window, "Read Stored Tree", 300, pd->{
 			long startTime = System.currentTimeMillis();
 			
 			DiskItem root = null;
 			switch (algo) {
 			case 0: root = openStoredTree_old(selectedFile, pd); break;
-			case 1: root = openStoredTree_new(selectedFile, pd); break;
+			case 1: root = openStoredTree_new(selectedFile, pd, false); break;
+			case 2: root = openStoredTree_new(selectedFile, pd, true); break;
 			}
 			
 			String durationStr_ms = DateTimeFormatter.getDurationStr_ms(System.currentTimeMillis()-startTime);
-			System.out.printf("StoredTree read%n   from file \"%s\"%n   in %s.%n", selectedFile, durationStr_ms);
+			System.out.printf("StoredTree read%n   from file \"%s\"%n   in %s (Algorith: %s).%n", selectedFile, durationStr_ms, algoName);
 			
 			return root;
 			
 		});
 	}
 
-	private static DiskItem openStoredTree_new(File selectedFile, ProgressDialog pd) {
+	private static DiskItem openStoredTree_new(File selectedFile, ProgressDialog pd, boolean displayDetailedProgress) {
+		if (displayDetailedProgress)
+			pd.displayProgressString(ProgressDisplay.Number);
+		
 		SwingUtilities.invokeLater(()->{
 			pd.setTaskTitle("Read Stored Tree File");
 			pd.setIndeterminate(true);
@@ -1006,7 +1011,11 @@ public class DiskUsage implements FileMap.GuiContext {
 			if (Thread.currentThread().isInterrupted()) { newRoot = null; break; }
 			parseLine(line,newRoot);
 			final int index = ++i;
-			SwingUtilities.invokeLater(() -> pd.setValue(index));
+			SwingUtilities.invokeLater(() -> {
+				if (displayDetailedProgress)
+					pd.setTaskTitle(String.format("Line parsed: %s", line));
+				pd.setValue(index);
+			});
 		}
 		
 		if (newRoot!=null) {
