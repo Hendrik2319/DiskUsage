@@ -29,6 +29,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
 import java.util.Vector;
@@ -79,6 +80,7 @@ import net.schwarzbaer.gui.Tables.SimplifiedColumnConfig;
 import net.schwarzbaer.image.bumpmapping.BumpMapping.Normal;
 import net.schwarzbaer.java.tools.diskusagecompare.DiskUsageCompare;
 import net.schwarzbaer.system.ClipboardTools;
+import net.schwarzbaer.system.DateTimeFormatter;
 
 public class DiskUsage implements FileMap.GuiContext {
 
@@ -895,7 +897,17 @@ public class DiskUsage implements FileMap.GuiContext {
 	}
 
 	public static ImportedFileData openStoredTree(Window window, String title) {
-		return ImportedFileData.importFileData(window, title, storedTreeChooser, DiskUsage::openStoredTree);
+		
+		String[] values = new String[] {"Old Algorithm","New Algorithm"};
+		String dlgTitle = "Algorithm for Reading StoredTree";
+		String dlgMessage = "Select algorithm for reading StoredTree:";
+		Object result = JOptionPane.showInputDialog(window, dlgMessage, dlgTitle, JOptionPane.QUESTION_MESSAGE, null, values, values[0]);
+		
+		Vector<String> valuesVec = new Vector<>(Arrays.asList(values));
+		int algo = valuesVec.indexOf(result);
+		if (algo<0) return null;
+		
+		return ImportedFileData.importFileData(window, title, storedTreeChooser, (t, u) -> DiskUsage.openStoredTree(t, u, algo));
 	}
 
 	private boolean importFileData(Function<Window,ImportedFileData> readFcn) {
@@ -916,6 +928,8 @@ public class DiskUsage implements FileMap.GuiContext {
 			return null;
 		
 		return ProgressDialog.runWithProgressDialogRV(window, "Read Folder", 500, pd->{
+			long startTime = System.currentTimeMillis();
+			
 			SwingUtilities.invokeLater(()->{
 				pd.setTaskTitle("Read Folder");
 				pd.setIndeterminate(true);
@@ -942,54 +956,114 @@ public class DiskUsage implements FileMap.GuiContext {
 				DiskItemType.setTypes(newRoot);
 			}
 			
+			String durationStr_ms = DateTimeFormatter.getDurationStr_ms(System.currentTimeMillis()-startTime);
+			System.out.printf("Scanned folder%n   \"%s\"%n   in %s.%n", selectedfolder, durationStr_ms);
+			
 			return newRoot;
 		});
 	}
 
-	private static DiskItem openStoredTree(Window window, File selectedFile) {
+	private static DiskItem openStoredTree(Window window, File selectedFile, int algo) {
 		return ProgressDialog.runWithProgressDialogRV(window, "Read Stored Tree", 300, pd->{
+			long startTime = System.currentTimeMillis();
 			
-			long fileSize = selectedFile.length();
+			DiskItem root = null;
+			switch (algo) {
+			case 0: root = openStoredTree_old(selectedFile, pd); break;
+			case 1: root = openStoredTree_new(selectedFile, pd); break;
+			}
+			
+			String durationStr_ms = DateTimeFormatter.getDurationStr_ms(System.currentTimeMillis()-startTime);
+			System.out.printf("StoredTree read%n   from file \"%s\"%n   in %s.%n", selectedFile, durationStr_ms);
+			
+			return root;
+			
+		});
+	}
+
+	private static DiskItem openStoredTree_new(File selectedFile, ProgressDialog pd) {
+		SwingUtilities.invokeLater(()->{
+			pd.setTaskTitle("Read Stored Tree File");
+			pd.setIndeterminate(true);
+		});
+		
+		List<String> lines;
+		try {
+			lines = Files.readAllLines(selectedFile.toPath(), StandardCharsets.UTF_8);
+		} catch (IOException e) {
+			e.printStackTrace();
+			return null;
+		}
+		
+		SwingUtilities.invokeLater(()->{
+			pd.setTaskTitle("Parse Lines of Stored Tree File");
+			pd.setValue(0, lines.size());
+		});
+		
+		int i=0;
+		DiskItem newRoot = new DiskItem();
+		for (String line : lines) {
+			if (Thread.currentThread().isInterrupted()) { newRoot = null; break; }
+			parseLine(line,newRoot);
+			final int index = ++i;
+			SwingUtilities.invokeLater(() -> pd.setValue(index));
+		}
+		
+		if (newRoot!=null) {
 			SwingUtilities.invokeLater(()->{
-				pd.setTaskTitle("Read Stored Tree");
-				pd.setValue(0, (int) Math.min(Integer.MAX_VALUE, fileSize));
-				//pd.setIndeterminate(true);
+				pd.setTaskTitle("Determine File Types");
+				pd.setIndeterminate(true);
 			});
 			
-			
-			DiskItem newRoot = null;
-			try (ByteCounter byteCounter = new ByteCounter(new FileInputStream(selectedFile)); BufferedReader in = new BufferedReader(new InputStreamReader(byteCounter, StandardCharsets.UTF_8),1000000)) {
-				newRoot = new DiskItem();
-				String line;
-				while ( (line=in.readLine())!=null ) {
-					if (Thread.currentThread().isInterrupted()) { newRoot = null; break; }
-					int pos = line.indexOf(0x9);
-					long size_kB = Long.parseLong(line.substring(0,pos));
-					String[] path = line.substring(pos+1).split("/");
-					DiskItem item = newRoot.get(path);
-					item.size_kB = size_kB;
-					SwingUtilities.invokeLater(()->{
-						pd.setValue((int) Math.min(Integer.MAX_VALUE, byteCounter.readPos));
-					});
-				}
-				
-			} catch (FileNotFoundException e) {
-				e.printStackTrace();
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
-			
-			if (newRoot!=null) {
-				SwingUtilities.invokeLater(()->{
-					pd.setTaskTitle("Determine File Types");
-					pd.setIndeterminate(true);
-				});
-				
-				DiskItemType.setTypes(newRoot);
-			}
-			
-			return newRoot;
+			DiskItemType.setTypes(newRoot);
+		}
+		return newRoot;
+	}
+
+	private static DiskItem openStoredTree_old(File selectedFile, ProgressDialog pd) {
+		long fileSize = selectedFile.length();
+		SwingUtilities.invokeLater(()->{
+			pd.setTaskTitle("Read Stored Tree");
+			pd.setValue(0, (int) Math.min(Integer.MAX_VALUE, fileSize));
+			//pd.setIndeterminate(true);
 		});
+		
+		
+		DiskItem newRoot = null;
+		try (
+				ByteCounter byteCounter = new ByteCounter(new FileInputStream(selectedFile));
+				BufferedReader in = new BufferedReader(new InputStreamReader(byteCounter, StandardCharsets.UTF_8),1000000)
+			) {
+			newRoot = new DiskItem();
+			String line;
+			while ( (line=in.readLine())!=null ) {
+				if (Thread.currentThread().isInterrupted()) { newRoot = null; break; }
+				parseLine(line,newRoot);
+				SwingUtilities.invokeLater(() -> pd.setValue((int) Math.min(Integer.MAX_VALUE, byteCounter.readPos)));
+			}
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+		if (newRoot!=null) {
+			SwingUtilities.invokeLater(()->{
+				pd.setTaskTitle("Determine File Types");
+				pd.setIndeterminate(true);
+			});
+			
+			DiskItemType.setTypes(newRoot);
+		}
+		return newRoot;
+	}
+
+	private static void parseLine(String line, DiskItem newRoot) {
+		int pos = line.indexOf(0x9);
+		long size_kB = Long.parseLong(line.substring(0,pos));
+		String[] path = line.substring(pos+1).split("/");
+		DiskItem item = newRoot.get(path);
+		item.size_kB = size_kB;
 	}
 
 	private void saveStoredTree() {
