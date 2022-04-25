@@ -1096,15 +1096,17 @@ public class DiskUsage implements FileMap.GuiContext {
 	public static void saveStoredTree(Window window, String title, DiskItem root) {
 		if (root == null) return;
 		storedTreeChooser.setDialogTitle(title);
-		if (storedTreeChooser.showSaveDialog(window)==FileChooser.APPROVE_OPTION) {
+		if (storedTreeChooser.showSaveDialog(window)==FileChooser.APPROVE_OPTION)
 			ProgressDialog.runWithProgressDialog(window, "Write Stored Tree", 300, pd->{
+				long startTime = System.currentTimeMillis();
+				File selectedFile = storedTreeChooser.getSelectedFile();
 				
 				SwingUtilities.invokeLater(()->{
 					pd.setTaskTitle("Write Stored Tree");
 					pd.setIndeterminate(true);
 				});
 				
-				try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(storedTreeChooser.getSelectedFile()), StandardCharsets.UTF_8))) {
+				try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(selectedFile), StandardCharsets.UTF_8))) {
 					boolean wasNotInterrupted = root.traverse(Thread.currentThread()::isInterrupted, true,(DiskItem di)->{
 						if (di==root) return;
 						out.printf("%d\t%s%n", di.size_kB, di.getPathStr("/"));
@@ -1115,8 +1117,9 @@ public class DiskUsage implements FileMap.GuiContext {
 					e.printStackTrace();
 				}
 				
+				String durationStr_ms = DateTimeFormatter.getDurationStr_ms(System.currentTimeMillis()-startTime);
+				System.out.printf("StoredTree written%n   into file \"%s\"%n   in %s.%n", selectedFile, durationStr_ms);
 			});
-		}
 	}
 	
 	private static class ByteCounter extends FilterInputStream {

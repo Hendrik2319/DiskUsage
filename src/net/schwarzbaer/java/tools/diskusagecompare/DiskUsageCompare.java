@@ -8,6 +8,8 @@ import java.awt.Graphics;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Window;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.Locale;
@@ -76,6 +78,27 @@ public class DiskUsageCompare {
 		fileTableModel.setDefaultRenderers();
 		JScrollPane fileTablePanel = new JScrollPane(fileTable);
 		
+		fileTable.addMouseListener(new MouseAdapter() {
+			@Override public void mouseClicked(MouseEvent e) {
+				if (e.getButton()==MouseEvent.BUTTON1 && e.getClickCount()==2) {
+					
+					int rowV = fileTable.rowAtPoint(e.getPoint());
+					int rowM = rowV<0 ? -1 : fileTable.convertRowIndexToModel(rowV);
+					if (rowM<0) return;
+					
+					CompareDiskItem cdi = fileTableModel.getRow(rowM);
+					if (cdi==null) return;
+					if (cdi.getChildren().isEmpty()) return;
+					
+					TreePath path = cdi.getPath();
+					tree.expandPath(path);
+					tree.setSelectionPath(path);
+					tree.scrollPathToVisible(path);
+					// TODO
+				}
+			}
+		});
+		
 		JSplitPane mainPanel = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, true, treePanel, fileTablePanel);
 		
 		
@@ -136,6 +159,18 @@ public class DiskUsageCompare {
 		);
 	}
 
+	@SuppressWarnings("unused")
+	private static void printPath(String title, TreePath path) {
+		if (path==null) { System.out.printf("%s: <null>%n", title); return; }
+		
+		Object[] pathObjs = path.getPath();
+		if (pathObjs.length==0) { System.out.printf("%s: []%n", title); return; }
+		
+		System.out.printf("%s:%n", title);
+		for (int i=0; i<pathObjs.length; i++)
+			System.out.printf("    [%d] %s%n", i, pathObjs[i]);
+	}
+
 	static class AppSettings extends Settings.DefaultAppSettings<AppSettings.ValueGroup, AppSettings.ValueKey> {
 		public enum ValueKey { DividerLocation }
 	
@@ -154,18 +189,19 @@ public class DiskUsageCompare {
 		private TreePath selectedPath;
 		private CompareDiskItem selectedCDI;
 
-		public CDITreeSelectionListener() {
+		CDITreeSelectionListener() {
 			selectedPath = null;
 			selectedCDI = null;
 		}
 
-		@Override
-		public void valueChanged(TreeSelectionEvent e) {
+		@Override public void valueChanged(TreeSelectionEvent e) {
 			selectedPath = e.getPath();
+			//printPath("SelectedPath", selectedPath);
 			Object obj = selectedPath==null ? null : selectedPath.getLastPathComponent();
 			if (obj instanceof CompareDiskItem) {
 				selectedCDI = (CompareDiskItem) obj;
 				fileTableModel.setData(selectedCDI);
+				//printPath("SelectedCDI", selectedCDI.getPath());
 			}
 		}
 	}
@@ -258,6 +294,11 @@ public class DiskUsageCompare {
 			
 			if (this.oldData!=null) name = this.oldData.name;
 			if (this.newData!=null) name = this.newData.name;
+		}
+		
+		TreePath getPath() {
+			if (parent == null) return new TreePath(this);
+			return parent.getPath().pathByAddingChild(this);
 		}
 		
 		String getPathStr(String glue) {
