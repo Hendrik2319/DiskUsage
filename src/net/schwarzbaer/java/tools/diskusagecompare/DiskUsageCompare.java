@@ -487,8 +487,8 @@ public class DiskUsageCompare {
 			if (oldData==null && newData==null)
 				return String.format("%s <EMPTY>", name);
 			
-			if (oldData==null) return String.format("%s <ADDED> %s"  , name, newData.getSizeStr());
-			if (newData==null) return String.format("%s <REMOVED> %s", name, oldData.getSizeStr());
+			if (oldData==null) return String.format("%s <ADDED> [%s]"  , name, newData.getSizeStr());
+			if (newData==null) return String.format("%s <REMOVED> [%s]", name, oldData.getSizeStr());
 			
 			if (oldData.size_kB == newData.size_kB)
 				return String.format("%s [%s]", name, oldData.getSizeStr());
