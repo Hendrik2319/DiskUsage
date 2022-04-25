@@ -33,7 +33,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
 import java.util.Vector;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -872,7 +871,7 @@ public class DiskUsage implements FileMap.GuiContext {
 
 	public record ImportedFileData(DiskItem root, File source) {
 
-		private static ImportedFileData importFileData(Window window, String fchTitle, JFileChooser fileChooser, Supplier<Boolean> interludeTask, BiFunction<Window,File,DiskItem> readFcn) {
+		private static ImportedFileData importFileData(Window window, String fchTitle, JFileChooser fileChooser, Supplier<Boolean> interludeTask, Function<File,DiskItem> readFcn) {
 			fileChooser.setDialogTitle(fchTitle);
 			if (fileChooser.showOpenDialog(window) != FileChooser.APPROVE_OPTION) return null;
 			File selectedFile = fileChooser.getSelectedFile();
@@ -880,7 +879,7 @@ public class DiskUsage implements FileMap.GuiContext {
 			if (interludeTask!=null && interludeTask.get()==false)
 				return null;
 			
-			DiskItem newRoot = readFcn.apply(window, selectedFile);
+			DiskItem newRoot = readFcn.apply(selectedFile);
 			if (newRoot==null)
 				return null;
 			
@@ -889,19 +888,19 @@ public class DiskUsage implements FileMap.GuiContext {
 	}
 	
 	private boolean scanFolder() {
-		return importFileData(window -> scanFolder(window, "Select Folder", null));
+		return importFileData(window -> scanFolder(window, "Select Folder", null, null));
 	}
 
 	private boolean openStoredTree() {
-		return importFileData(window -> openStoredTree(window, "Select Stored Tree File", null));
+		return importFileData(window -> openStoredTree(window, "Select Stored Tree File", null, null));
 	}
 
-	public static ImportedFileData scanFolder(Window window, String fchTitle, Supplier<Boolean> interludeTask) {
-		return ImportedFileData.importFileData(window, fchTitle, folderChooser, interludeTask, DiskUsage::scanFolder);
+	public static ImportedFileData scanFolder(Window window, String fchTitle, Supplier<Boolean> interludeTask, String targetName) {
+		return ImportedFileData.importFileData(window, fchTitle, folderChooser, interludeTask, selectedFolder -> DiskUsage.scanFolder(window, selectedFolder, targetName));
 	}
 
-	public static ImportedFileData openStoredTree(Window window, String fchTitle, Supplier<Boolean> interludeTask) {
-		return ImportedFileData.importFileData(window, fchTitle, storedTreeChooser, interludeTask, DiskUsage::openStoredTree);
+	public static ImportedFileData openStoredTree(Window window, String fchTitle, Supplier<Boolean> interludeTask, String targetName) {
+		return ImportedFileData.importFileData(window, fchTitle, storedTreeChooser, interludeTask, selectedFile -> DiskUsage.openStoredTree(window, selectedFile, targetName));
 		
 		//String[] values = new String[] {"Old Algorithm","New Algorithm","New Algorithm (Details)"};
 		//String dlgTitle = "Algorithm for Reading StoredTree";
@@ -925,18 +924,20 @@ public class DiskUsage implements FileMap.GuiContext {
 		return true;
 	}
 
-	private static DiskItem scanFolder(Window window, File selectedfolder) {
+	private static DiskItem scanFolder(Window window, File selectedfolder, String targetName) {
 		
 		int res = JOptionPane.showConfirmDialog(window, "Follow symbolic links?", "Symbolic Links", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
 		boolean followSymbolicLinks = res==JOptionPane.YES_OPTION;
 		if (res!=JOptionPane.YES_OPTION && res!=JOptionPane.NO_OPTION)
 			return null;
 		
-		return ProgressDialog.runWithProgressDialogRV(window, "Read Folder", 500, pd->{
+		String dlgTitle = "Scan Folder";
+		if (targetName!=null) dlgTitle += " for "+targetName;
+		return ProgressDialog.runWithProgressDialogRV(window, dlgTitle, 500, pd->{
 			long startTime = System.currentTimeMillis();
 			
 			SwingUtilities.invokeLater(()->{
-				pd.setTaskTitle("Read Folder");
+				pd.setTaskTitle("Scan Folder");
 				pd.setIndeterminate(true);
 			});
 			
@@ -962,14 +963,19 @@ public class DiskUsage implements FileMap.GuiContext {
 			}
 			
 			String durationStr_ms = DateTimeFormatter.getDurationStr_ms(System.currentTimeMillis()-startTime);
-			System.out.printf("Scanned folder%n   \"%s\"%n   in %s.%n", selectedfolder, durationStr_ms);
+			if (targetName!=null)
+				System.out.printf("Folder \"%s\" scanned%n   for \"%s\"%n   in %s.%n", selectedfolder, targetName, durationStr_ms);
+			else
+				System.out.printf("Folder \"%s\" scanned%n   in %s.%n", selectedfolder, durationStr_ms);
 			
 			return newRoot;
 		});
 	}
 
-	private static DiskItem openStoredTree(Window window, File selectedFile) {
-		return ProgressDialog.runWithProgressDialogRV(window, "Read Stored Tree", 300, pd->{
+	private static DiskItem openStoredTree(Window window, File selectedFile, String targetName) {
+		String dlgTitle = "Read Stored Tree";
+		if (targetName!=null) dlgTitle += " for "+targetName;
+		return ProgressDialog.runWithProgressDialogRV(window, dlgTitle, 300, pd->{
 			long startTime = System.currentTimeMillis();
 			
 			DiskItem root = openStoredTree_new(selectedFile, pd);
@@ -980,7 +986,10 @@ public class DiskUsage implements FileMap.GuiContext {
 			//}
 			
 			String durationStr_ms = DateTimeFormatter.getDurationStr_ms(System.currentTimeMillis()-startTime);
-			System.out.printf("StoredTree read%n   from file \"%s\"%n   in %s.%n", selectedFile, durationStr_ms);
+			if (targetName!=null)
+				System.out.printf("StoredTree read%n   from file \"%s\"%n   for \"%s\"%n   in %s.%n", selectedFile, targetName, durationStr_ms);
+			else
+				System.out.printf("StoredTree read%n   from file \"%s\"%n   in %s.%n", selectedFile, durationStr_ms);
 			
 			return root;
 			

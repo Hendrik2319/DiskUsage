@@ -535,11 +535,11 @@ public class DiskUsageCompare {
 		private void    saveStoredTree() { DiskUsage.saveStoredTree(parent, String.format("Select Stored Tree File for %s", title), ifd.root()); }
 		
 		private interface ImportTask {
-			ImportedFileData importData(Window window, String fchTitle, Supplier<Boolean> interludeTask);
+			ImportedFileData importData(Window window, String fchTitle, Supplier<Boolean> interludeTask, String targetName);
 		}
 		
 		private boolean importData(ImportTask importFcn, String dlgTitle, Supplier<Boolean> interludeTask) {
-			ImportedFileData ifd = importFcn.importData(parent, dlgTitle, interludeTask);
+			ImportedFileData ifd = importFcn.importData(parent, dlgTitle, interludeTask, title);
 			if (ifd==null) return false;
 			this.ifd = ifd;
 			setRoot.accept(this.ifd.root());
