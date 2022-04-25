@@ -872,32 +872,36 @@ public class DiskUsage implements FileMap.GuiContext {
 
 	public record ImportedFileData(DiskItem root, File source) {
 
-		private static ImportedFileData importFileData(Window window, String title, JFileChooser fileChooser, BiFunction<Window,File,DiskItem> readFcn) {
-			fileChooser.setDialogTitle(title);
+		private static ImportedFileData importFileData(Window window, String fchTitle, JFileChooser fileChooser, Supplier<Boolean> interludeTask, BiFunction<Window,File,DiskItem> readFcn) {
+			fileChooser.setDialogTitle(fchTitle);
 			if (fileChooser.showOpenDialog(window) != FileChooser.APPROVE_OPTION) return null;
 			File selectedFile = fileChooser.getSelectedFile();
 			
+			if (interludeTask!=null && interludeTask.get()==false)
+				return null;
+			
 			DiskItem newRoot = readFcn.apply(window, selectedFile);
-			if (newRoot==null) return null;
+			if (newRoot==null)
+				return null;
 			
 			return new ImportedFileData(newRoot, selectedFile);
 		}
 	}
 	
 	private boolean scanFolder() {
-		return importFileData(window -> scanFolder(window, "Select Folder"));
+		return importFileData(window -> scanFolder(window, "Select Folder", null));
 	}
 
 	private boolean openStoredTree() {
-		return importFileData(window -> openStoredTree(window, "Select Stored Tree File"));
+		return importFileData(window -> openStoredTree(window, "Select Stored Tree File", null));
 	}
 
-	public static ImportedFileData scanFolder(Window window, String title) {
-		return ImportedFileData.importFileData(window, title, folderChooser, DiskUsage::scanFolder);
+	public static ImportedFileData scanFolder(Window window, String fchTitle, Supplier<Boolean> interludeTask) {
+		return ImportedFileData.importFileData(window, fchTitle, folderChooser, interludeTask, DiskUsage::scanFolder);
 	}
 
-	public static ImportedFileData openStoredTree(Window window, String title) {
-		return ImportedFileData.importFileData(window, title, storedTreeChooser, DiskUsage::openStoredTree);
+	public static ImportedFileData openStoredTree(Window window, String fchTitle, Supplier<Boolean> interludeTask) {
+		return ImportedFileData.importFileData(window, fchTitle, storedTreeChooser, interludeTask, DiskUsage::openStoredTree);
 		
 		//String[] values = new String[] {"Old Algorithm","New Algorithm","New Algorithm (Details)"};
 		//String dlgTitle = "Algorithm for Reading StoredTree";

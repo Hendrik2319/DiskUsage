@@ -12,7 +12,6 @@ import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.Locale;
 import java.util.Vector;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -122,11 +121,21 @@ public class DiskUsageCompare {
 	}
 	
 	public void initialize() {
-		boolean success = true;
-		if (success) success = DiskUsage.OpenDialog.show(mainWindow, "Load Old File Tree", oldDataField::scanFolder, oldDataField::openStoredTree);
-		if (success) success = DiskUsage.OpenDialog.show(mainWindow, "Load New File Tree", newDataField::scanFolder, newDataField::openStoredTree);
+		//boolean success = true;
+		//if (success) success = DiskUsage.OpenDialog.show(mainWindow, "Load Old File Tree", oldDataField::scanFolder, oldDataField::openStoredTree);
+		//if (success) success = DiskUsage.OpenDialog.show(mainWindow, "Load New File Tree", newDataField::scanFolder, newDataField::openStoredTree);
+		
+		initStep(oldDataField, "Load Old File Tree", ()->initStep(newDataField, "Load New File Tree", null));
 	}
 	
+	private boolean initStep(SourceFieldRow sourceFieldRow, String title, Supplier<Boolean> interludeTask) {
+		return DiskUsage.OpenDialog.show(
+				mainWindow, title,
+				() -> sourceFieldRow.scanFolder    (interludeTask),
+				() -> sourceFieldRow.openStoredTree(interludeTask)
+		);
+	}
+
 	static class AppSettings extends Settings.DefaultAppSettings<AppSettings.ValueGroup, AppSettings.ValueKey> {
 		public enum ValueKey { DividerLocation }
 	
@@ -511,7 +520,7 @@ public class DiskUsageCompare {
 			c.weightx = 1;
 			panel.add(outputField = DiskUsage.createOutputTextField(""),c);
 			c.weightx = 0;
-			panel.add(DiskUsage.createButton(Icons16.Folder, null, "Scan Folder"     , e->scanFolder    ()),c);
+			panel.add(DiskUsage.createButton(Icons16.Folder        , null, "Scan Folder"     , e->scanFolder    ()),c);
 			panel.add(DiskUsage.createButton(Icons16.OpenStoredTree, null, "Open Stored Tree", e->openStoredTree()),c);
 			c.gridwidth = GridBagConstraints.REMAINDER;
 			btnSaveStoredTree = DiskUsage.createButton(Icons16.SaveStoredTree, null, "Save as Stored Tree", e->saveStoredTree());
@@ -519,12 +528,18 @@ public class DiskUsageCompare {
 			panel.add(btnSaveStoredTree,c);
 		}
 
-		private void saveStoredTree() { DiskUsage.saveStoredTree(parent, String.format("Select Stored Tree File for %s", title), ifd.root()); }
-		boolean scanFolder    () { return importData(DiskUsage::scanFolder    , String.format("Select Folder for %s"          , title)); }
-		boolean openStoredTree() { return importData(DiskUsage::openStoredTree, String.format("Select Stored Tree File for %s", title)); }
+		boolean         scanFolder    (Supplier<Boolean> interludeTask) { return importData(DiskUsage::scanFolder    , String.format("Select Folder for %s"          , title), interludeTask); }
+		boolean         openStoredTree(Supplier<Boolean> interludeTask) { return importData(DiskUsage::openStoredTree, String.format("Select Stored Tree File for %s", title), interludeTask); }
+		private boolean scanFolder    () { return scanFolder    (null); }
+		private boolean openStoredTree() { return openStoredTree(null); }
+		private void    saveStoredTree() { DiskUsage.saveStoredTree(parent, String.format("Select Stored Tree File for %s", title), ifd.root()); }
 		
-		private boolean importData(BiFunction<Window,String,ImportedFileData> importFcn, String dlgTitle) {
-			ImportedFileData ifd = importFcn.apply(parent, dlgTitle);
+		private interface ImportTask {
+			ImportedFileData importData(Window window, String fchTitle, Supplier<Boolean> interludeTask);
+		}
+		
+		private boolean importData(ImportTask importFcn, String dlgTitle, Supplier<Boolean> interludeTask) {
+			ImportedFileData ifd = importFcn.importData(parent, dlgTitle, interludeTask);
 			if (ifd==null) return false;
 			this.ifd = ifd;
 			setRoot.accept(this.ifd.root());
