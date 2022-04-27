@@ -17,9 +17,7 @@ import java.io.FileFilter;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
-import java.io.FilterInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
@@ -37,11 +35,13 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import javax.swing.AbstractButton;
 import javax.swing.AbstractCellEditor;
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
 import javax.swing.Icon;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
@@ -52,6 +52,7 @@ import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
+import javax.swing.JToggleButton;
 import javax.swing.JTree;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
@@ -69,13 +70,10 @@ import net.schwarzbaer.gui.FileChooser;
 import net.schwarzbaer.gui.HSColorChooser;
 import net.schwarzbaer.gui.HSColorChooser.ColorDialog;
 import net.schwarzbaer.gui.IconSource;
-import net.schwarzbaer.gui.IconSource.CachedIcons;
 import net.schwarzbaer.gui.ProgressDialog;
 import net.schwarzbaer.gui.StandardDialog;
 import net.schwarzbaer.gui.StandardMainWindow;
 import net.schwarzbaer.gui.Tables;
-import net.schwarzbaer.gui.Tables.LabelRendererComponent;
-import net.schwarzbaer.gui.Tables.SimplifiedColumnConfig;
 import net.schwarzbaer.image.bumpmapping.BumpMapping.Normal;
 import net.schwarzbaer.java.tools.diskusagecompare.DiskUsageCompare;
 import net.schwarzbaer.system.ClipboardTools;
@@ -94,8 +92,8 @@ public class DiskUsage implements FileMap.GuiContext {
 		public Icon getCacheIcon() { return icons16.getCachedIcon(this); }
 	}
 	
-	private static CachedIcons<Icons32> icons32;
-	private static CachedIcons<Icons16> icons16;
+	private static IconSource.CachedIcons<Icons32> icons32;
+	private static IconSource.CachedIcons<Icons16> icons16;
 	private static FileChooser storedTreeChooser;
 	private static JFileChooser folderChooser;
 	
@@ -164,31 +162,50 @@ public class DiskUsage implements FileMap.GuiContext {
         comp.setEditable(false);
         return comp;
     }
+
+	public static JToggleButton createToggleButton(Icons16 icon, String title, boolean isSelected, ButtonGroup bg, ActionListener al) {
+		JToggleButton comp = new JToggleButton();
+		comp.setSelected(isSelected);
+		if (bg!=null) bg.add(comp);
+		return setAbstractButton(comp, null, icon, title, null, al);
+    }
 	
+	public static JButton createButton(String title, ActionListener al) {
+		return setAbstractButton(new JButton(), null, null, title, null, al);
+    }
 	public static JButton createButton(Icons16 icon, String title, ActionListener al) {
-		return createButton(null, icon, title, null, al);
+		return setAbstractButton(new JButton(), null, icon, title, null, al);
     }
-	
 	public static JButton createButton(Icons32 icon, String title, ActionListener al) {
-		return createButton(icon, null, title, null, al);
+		return setAbstractButton(new JButton(), icon, null, title, null, al);
     }
-	
 	public static JButton createButton(Icons16 icon, String title, String toolTip, ActionListener al) {
-		return createButton(null, icon, title, toolTip, al);
+		return setAbstractButton(new JButton(), null, icon, title, toolTip, al);
     }
-	
 	public static JButton createButton(Icons32 icon, String title, String toolTip, ActionListener al) {
-		return createButton(icon, null, title, toolTip, al);
+		return setAbstractButton(new JButton(), icon, null, title, toolTip, al);
     }
-	
 	public static JButton createButton(Icons32 icon32, Icons16 icon16, String title, String toolTip, ActionListener al) {
-		JButton comp = new JButton();
+		return setAbstractButton(new JButton(), icon32, icon16, title, toolTip, al);
+	}
+
+	private static <Btn extends AbstractButton> Btn setAbstractButton(Btn comp, Icons32 icon32, Icons16 icon16, String title, String toolTip, ActionListener al) {
 		if (icon32 !=null) comp.setIcon(icons32.getCachedIcon(icon32));
 		if (icon16 !=null) comp.setIcon(icons16.getCachedIcon(icon16));
 		if (title  !=null) comp.setText(title);
 		if (toolTip!=null) comp.setToolTipText(toolTip);
 		if (al     !=null) comp.addActionListener(al);
 		comp.setHorizontalAlignment(JButton.LEFT);
+		return comp;
+	}
+
+	public static JCheckBox createCheckBox(String title, String toolTip, boolean isChecked, boolean isEnabled, Consumer<Boolean> setValue) {
+		JCheckBox comp = new JCheckBox();
+		comp.setSelected(isChecked);
+		comp.setEnabled(isEnabled);
+		if (title   !=null) comp.setText(title);
+		if (toolTip !=null) comp.setToolTipText(toolTip);
+		if (setValue!=null) comp.addActionListener(e->setValue.accept(comp.isSelected()));
 		return comp;
 	}
 
@@ -521,7 +538,7 @@ public class DiskUsage implements FileMap.GuiContext {
 		private class ColorCellRendererEditor extends AbstractCellEditor implements TableCellRenderer, TableCellEditor {
 			private static final long serialVersionUID = 2734834827009184692L;
 			
-			private LabelRendererComponent renderComp;
+			private Tables.LabelRendererComponent renderComp;
 			private ColorDialog colorDialog;
 			private Color oldColor;
 			private Color newColor;
@@ -623,11 +640,11 @@ public class DiskUsage implements FileMap.GuiContext {
 			Ext  ("List of File Extensions",String.class, 30, 500),
 			;
 			
-			private SimplifiedColumnConfig cfg;
+			private Tables.SimplifiedColumnConfig cfg;
 			ColumnID(String name, Class<?> columnClass, int minWidth, int width) {
-				cfg = new SimplifiedColumnConfig(name, columnClass, minWidth, -1, width, width);
+				cfg = new Tables.SimplifiedColumnConfig(name, columnClass, minWidth, -1, width, width);
 			}
-			@Override public SimplifiedColumnConfig getColumnConfig() { return cfg; }
+			@Override public Tables.SimplifiedColumnConfig getColumnConfig() { return cfg; }
 			
 		}
 		private class DiskItemTypeTableModel extends Tables.SimplifiedTableModel<ColumnID> {
@@ -869,51 +886,8 @@ public class DiskUsage implements FileMap.GuiContext {
 		private static final long serialVersionUID = 7818542051945043168L;
 	}
 
-	public record ImportedFileData(DiskItem root, File source) {
-
-		private static ImportedFileData importFileData(Window window, String fchTitle, JFileChooser fileChooser, Supplier<Boolean> interludeTask, Function<File,DiskItem> readFcn) {
-			fileChooser.setDialogTitle(fchTitle);
-			if (fileChooser.showOpenDialog(window) != FileChooser.APPROVE_OPTION) return null;
-			File selectedFile = fileChooser.getSelectedFile();
-			
-			if (interludeTask!=null && interludeTask.get()==false)
-				return null;
-			
-			DiskItem newRoot = readFcn.apply(selectedFile);
-			if (newRoot==null)
-				return null;
-			
-			return new ImportedFileData(newRoot, selectedFile);
-		}
-	}
+	public record ImportedFileData(DiskItem root, File source) {}
 	
-	private boolean scanFolder() {
-		return importFileData(window -> scanFolder(window, "Select Folder", null, null));
-	}
-
-	private boolean openStoredTree() {
-		return importFileData(window -> openStoredTree(window, "Select Stored Tree File", null, null));
-	}
-
-	public static ImportedFileData scanFolder(Window window, String fchTitle, Supplier<Boolean> interludeTask, String targetName) {
-		return ImportedFileData.importFileData(window, fchTitle, folderChooser, interludeTask, selectedFolder -> DiskUsage.scanFolder(window, selectedFolder, targetName));
-	}
-
-	public static ImportedFileData openStoredTree(Window window, String fchTitle, Supplier<Boolean> interludeTask, String targetName) {
-		return ImportedFileData.importFileData(window, fchTitle, storedTreeChooser, interludeTask, selectedFile -> DiskUsage.openStoredTree(window, selectedFile, targetName));
-		
-		//String[] values = new String[] {"Old Algorithm","New Algorithm","New Algorithm (Details)"};
-		//String dlgTitle = "Algorithm for Reading StoredTree";
-		//String dlgMessage = "Select algorithm for reading StoredTree:";
-		//Object result = JOptionPane.showInputDialog(window, dlgMessage, dlgTitle, JOptionPane.QUESTION_MESSAGE, null, values, values[1]);
-		//
-		//Vector<String> valuesVec = new Vector<>(Arrays.asList(values));
-		//int algo = valuesVec.indexOf(result);
-		//if (algo<0) return null;
-		//
-		//return ImportedFileData.importFileData(window, title, storedTreeChooser, (t, u) -> DiskUsage.openStoredTree(t, u, algo, values[algo]));
-	}
-
 	private boolean importFileData(Function<Window,ImportedFileData> readFcn) {
 		ImportedFileData rd = readFcn.apply(mainWindow);
 		if (rd==null) return false;
@@ -924,66 +898,80 @@ public class DiskUsage implements FileMap.GuiContext {
 		return true;
 	}
 
-	private static DiskItem scanFolder(Window window, File selectedfolder, String targetName) {
+	private boolean scanFolder    () { return importFileData(window -> scanFolder    (window, "Select Folder"          , false, null)); }
+	private boolean openStoredTree() { return importFileData(window -> openStoredTree(window, "Select Stored Tree File",        null)); }
+
+	public static ImportedFileData scanFolder(Window window, String fchTitle, Boolean excludeRootFolder, String targetName) {
+		File selectedFolder = selectFolder(window, fchTitle);
+		if (selectedFolder == null) return null;
 		
-		int res = JOptionPane.showConfirmDialog(window, "Follow symbolic links?", "Symbolic Links", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
-		boolean followSymbolicLinks = res==JOptionPane.YES_OPTION;
-		if (res!=JOptionPane.YES_OPTION && res!=JOptionPane.NO_OPTION)
-			return null;
+		boolean followSymbolicLinks;
+		{
+			int res = JOptionPane.showConfirmDialog(window, "Follow symbolic links?", "Symbolic Links", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+			if (res!=JOptionPane.YES_OPTION && res!=JOptionPane.NO_OPTION) return null;
+			followSymbolicLinks = res==JOptionPane.YES_OPTION;
+		}
 		
+		if (excludeRootFolder==null) {
+			int res = JOptionPane.showConfirmDialog(window, "Exclude RootFolder from resulting tree?", "Exclude RootFolder", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+			if (res!=JOptionPane.YES_OPTION && res!=JOptionPane.NO_OPTION) return null;
+			excludeRootFolder = res==JOptionPane.YES_OPTION;
+		}
+		
+		return scanFolder(window, selectedFolder, followSymbolicLinks, excludeRootFolder, targetName);
+	}
+
+	public static ImportedFileData openStoredTree(Window window, String fchTitle, String targetName) {
+		File selectedFile = selectStoredTreeFile(window, fchTitle);
+		if (selectedFile == null) return null;
+		
+		return openStoredTree(window, selectedFile, targetName);
+	}
+
+	public static File selectFolder(Window window, String fchTitle) {
+		return selectFile(window, fchTitle, folderChooser);
+	}
+
+	public static File selectStoredTreeFile(Window window, String fchTitle) {
+		return selectFile(window, fchTitle, storedTreeChooser);
+	}
+
+	private static File selectFile(Window window, String fchTitle, JFileChooser fileChooser) {
+		fileChooser.setDialogTitle(fchTitle);
+		if (fileChooser.showOpenDialog(window) != FileChooser.APPROVE_OPTION) return null;
+		return fileChooser.getSelectedFile();
+	}
+
+	public static ImportedFileData scanFolder(Window window, File selectedFolder, boolean followSymbolicLinks, boolean excludeRootFolder, String targetName) {
 		String dlgTitle = "Scan Folder";
 		if (targetName!=null) dlgTitle += " for "+targetName;
-		return ProgressDialog.runWithProgressDialogRV(window, dlgTitle, 500, pd->{
+		
+		DiskItem newRoot = ProgressDialog.runWithProgressDialogRV(window, dlgTitle, 500, pd->{
 			long startTime = System.currentTimeMillis();
 			
-			SwingUtilities.invokeLater(()->{
-				pd.setTaskTitle("Scan Folder");
-				pd.setIndeterminate(true);
-			});
-			
-			DiskItem newRoot = new DiskItem();
-			
-			DiskItem folderDI = newRoot.addChild(selectedfolder,followSymbolicLinks);
-			SwingUtilities.invokeLater(()->{
-				pd.setValue(0, 10000);
-			});
-			try {
-				folderDI.addChildren(pd,0,10000,selectedfolder,followSymbolicLinks);
-			} catch (ProgressAbortedException e) {
-				newRoot = null;
-			}
-			
-			if (newRoot!=null) {
-				SwingUtilities.invokeLater(()->{
-					pd.setTaskTitle("Determine File Types");
-					pd.setIndeterminate(true);
-				});
-				
-				DiskItemType.setTypes(newRoot);
-			}
+			DiskItem root = DiskUsage.scanFolder_core(pd, selectedFolder, followSymbolicLinks, excludeRootFolder);
 			
 			String durationStr_ms = DateTimeFormatter.getDurationStr_ms(System.currentTimeMillis()-startTime);
 			if (targetName!=null)
-				System.out.printf("Folder \"%s\" scanned%n   for \"%s\"%n   in %s.%n", selectedfolder, targetName, durationStr_ms);
+				System.out.printf("Folder \"%s\" scanned%n   for \"%s\"%n   in %s.%n", selectedFolder, targetName, durationStr_ms);
 			else
-				System.out.printf("Folder \"%s\" scanned%n   in %s.%n", selectedfolder, durationStr_ms);
+				System.out.printf("Folder \"%s\" scanned%n   in %s.%n", selectedFolder, durationStr_ms);
 			
-			return newRoot;
+			return root;
 		});
+		if (newRoot==null) return null;
+		
+		return new ImportedFileData(newRoot, selectedFolder);
 	}
 
-	private static DiskItem openStoredTree(Window window, File selectedFile, String targetName) {
+	public static ImportedFileData openStoredTree(Window window, File selectedFile, String targetName) {
 		String dlgTitle = "Read Stored Tree";
 		if (targetName!=null) dlgTitle += " for "+targetName;
-		return ProgressDialog.runWithProgressDialogRV(window, dlgTitle, 300, pd->{
+		
+		DiskItem newRoot = ProgressDialog.runWithProgressDialogRV(window, dlgTitle, 300, pd->{
 			long startTime = System.currentTimeMillis();
 			
-			DiskItem root = openStoredTree_new(selectedFile, pd);
-			//switch (algo) {
-			//case 0: root = openStoredTree_old(selectedFile, pd); break;
-			//case 1: root = openStoredTree_new(selectedFile, pd, false); break;
-			//case 2: root = openStoredTree_new(selectedFile, pd, true); break;
-			//}
+			DiskItem root = DiskUsage.openStoredTree_core(pd, selectedFile);
 			
 			String durationStr_ms = DateTimeFormatter.getDurationStr_ms(System.currentTimeMillis()-startTime);
 			if (targetName!=null)
@@ -994,12 +982,41 @@ public class DiskUsage implements FileMap.GuiContext {
 			return root;
 			
 		});
+		if (newRoot==null) return null;
+		
+		return new ImportedFileData(newRoot, selectedFile);
 	}
 
-	private static DiskItem openStoredTree_new(File selectedFile, ProgressDialog pd/* , boolean displayDetailedProgress */) {
-		//if (displayDetailedProgress)
-		//	pd.displayProgressString(ProgressDisplay.Number);
+	private static DiskItem scanFolder_core(ProgressDialog pd, File selectedfolder, boolean followSymbolicLinks, boolean excludeRootFolder) {
+		SwingUtilities.invokeLater(()->{
+			pd.setTaskTitle("Scan Folder");
+			pd.setIndeterminate(true);
+		});
 		
+		DiskItem newRoot = new DiskItem();
+		
+		DiskItem folderDI = excludeRootFolder ? newRoot : newRoot.addChild(selectedfolder,followSymbolicLinks);
+		SwingUtilities.invokeLater(()->{
+			pd.setValue(0, 10000);
+		});
+		try {
+			folderDI.addChildren(pd,0,10000,selectedfolder,followSymbolicLinks);
+		} catch (ProgressAbortedException e) {
+			newRoot = null;
+		}
+		
+		if (newRoot!=null) {
+			SwingUtilities.invokeLater(()->{
+				pd.setTaskTitle("Determine File Types");
+				pd.setIndeterminate(true);
+			});
+			
+			DiskItemType.setTypes(newRoot);
+		}
+		return newRoot;
+	}
+
+	private static DiskItem openStoredTree_core(ProgressDialog pd, File selectedFile) {
 		SwingUtilities.invokeLater(()->{
 			pd.setTaskTitle("Read Stored Tree File");
 			pd.setIndeterminate(true);
@@ -1022,13 +1039,13 @@ public class DiskUsage implements FileMap.GuiContext {
 		DiskItem newRoot = new DiskItem();
 		for (String line : lines) {
 			if (Thread.currentThread().isInterrupted()) { newRoot = null; break; }
-			parseLine(line,newRoot);
+			int pos = line.indexOf(0x9);
+			long size_kB = Long.parseLong(line.substring(0,pos));
+			String[] path = line.substring(pos+1).split("/");
+			DiskItem item = newRoot.get(path);
+			item.size_kB = size_kB;
 			final int index = ++i;
-			SwingUtilities.invokeLater(() -> {
-				//if (displayDetailedProgress)
-				//	pd.setTaskTitle(String.format("Line parsed: %s", line));
-				pd.setValue(index);
-			});
+			SwingUtilities.invokeLater(() -> pd.setValue(index));
 		}
 		
 		if (newRoot!=null) {
@@ -1040,53 +1057,6 @@ public class DiskUsage implements FileMap.GuiContext {
 			DiskItemType.setTypes(newRoot);
 		}
 		return newRoot;
-	}
-
-	@SuppressWarnings("unused")
-	private static DiskItem openStoredTree_old(File selectedFile, ProgressDialog pd) {
-		long fileSize = selectedFile.length();
-		SwingUtilities.invokeLater(()->{
-			pd.setTaskTitle("Read Stored Tree");
-			pd.setValue(0, (int) Math.min(Integer.MAX_VALUE, fileSize));
-			//pd.setIndeterminate(true);
-		});
-		
-		
-		DiskItem newRoot = null;
-		try (
-				ByteCounter byteCounter = new ByteCounter(new FileInputStream(selectedFile));
-				BufferedReader in = new BufferedReader(new InputStreamReader(byteCounter, StandardCharsets.UTF_8),1000000)
-			) {
-			newRoot = new DiskItem();
-			String line;
-			while ( (line=in.readLine())!=null ) {
-				if (Thread.currentThread().isInterrupted()) { newRoot = null; break; }
-				parseLine(line,newRoot);
-				SwingUtilities.invokeLater(() -> pd.setValue((int) Math.min(Integer.MAX_VALUE, byteCounter.readPos)));
-			}
-		} catch (FileNotFoundException e) {
-			e.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-		
-		if (newRoot!=null) {
-			SwingUtilities.invokeLater(()->{
-				pd.setTaskTitle("Determine File Types");
-				pd.setIndeterminate(true);
-			});
-			
-			DiskItemType.setTypes(newRoot);
-		}
-		return newRoot;
-	}
-
-	private static void parseLine(String line, DiskItem newRoot) {
-		int pos = line.indexOf(0x9);
-		long size_kB = Long.parseLong(line.substring(0,pos));
-		String[] path = line.substring(pos+1).split("/");
-		DiskItem item = newRoot.get(path);
-		item.size_kB = size_kB;
 	}
 
 	private void saveStoredTree() {
@@ -1122,62 +1092,6 @@ public class DiskUsage implements FileMap.GuiContext {
 			});
 	}
 	
-	private static class ByteCounter extends FilterInputStream {
-		
-		private long readPos;
-		private long markPos;
-
-		ByteCounter(InputStream in) {
-			super(in);
-			this.readPos = (long) 0;
-		}
-
-		@Override
-		public int read() throws IOException {
-			long temp = readPos;
-			int b = super.read();
-			this.readPos = temp + ((b>=0) ? 1 : 0);
-			return b;
-		}
-
-		@Override
-		public int read(byte[] b) throws IOException {
-			long temp = readPos;
-			int n = super.read(b);
-			this.readPos = temp + ((n>=0) ? n : 0);
-			return n;
-		}
-
-		@Override
-		public int read(byte[] b, int off, int len) throws IOException {
-			long temp = readPos;
-			int n = super.read(b, off, len);
-			this.readPos = temp + ((n>=0) ? n : 0);
-			return n;
-		}
-
-		@Override
-		public long skip(long n) throws IOException {
-			long temp = readPos;
-			n = super.skip(n);
-			this.readPos = temp + n;
-			return n;
-		}
-
-		@Override
-		public synchronized void mark(int readlimit) {
-			super.mark(readlimit);
-			markPos = readPos;
-		}
-
-		@Override
-		public synchronized void reset() throws IOException {
-			super.reset();
-			this.readPos = markPos;
-		}
-		
-	}
-
 	private static class DiskItemTreeNode implements TreeNode {
 
 		private DiskItemTreeNode parent = null;

@@ -7,9 +7,11 @@ import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.GridLayout;
 import java.awt.Window;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.io.File;
 import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.Locale;
@@ -18,7 +20,9 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import javax.swing.BorderFactory;
+import javax.swing.ButtonGroup;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
@@ -38,6 +42,7 @@ import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 
+import net.schwarzbaer.gui.StandardDialog;
 import net.schwarzbaer.gui.StandardMainWindow;
 import net.schwarzbaer.gui.Tables;
 import net.schwarzbaer.gui.Tables.SimplifiedColumnConfig;
@@ -66,6 +71,7 @@ public class DiskUsageCompare {
 		root = new CompareDiskItem(null);
 		
 		tree = new JTree((TreeNode)null);
+		//tree.setRootVisible(false);
 		tree.getSelectionModel().addTreeSelectionListener(new CDITreeSelectionListener());
 		tree.setCellRenderer(new CDITreeCellRenderer());
 		JScrollPane treePanel = new JScrollPane(tree);
@@ -94,7 +100,6 @@ public class DiskUsageCompare {
 					tree.expandPath(path);
 					tree.setSelectionPath(path);
 					tree.scrollPathToVisible(path);
-					// TODO
 				}
 			}
 		});
@@ -139,6 +144,9 @@ public class DiskUsageCompare {
 		debugMenu.add(DiskUsage.createMenuItem("Show Table Column Widths", e->{
 			System.out.printf("Table Column Widths: %s%n", Tables.SimplifiedTableModel.getColumnWidthsAsString(fileTable));
 		}));
+		debugMenu.add(DiskUsage.createMenuItem("ReCall Init Routine", e->{
+			initialize();
+		}));
 		
 		return menuBar;
 	}
@@ -148,15 +156,8 @@ public class DiskUsageCompare {
 		//if (success) success = DiskUsage.OpenDialog.show(mainWindow, "Load Old File Tree", oldDataField::scanFolder, oldDataField::openStoredTree);
 		//if (success) success = DiskUsage.OpenDialog.show(mainWindow, "Load New File Tree", newDataField::scanFolder, newDataField::openStoredTree);
 		
-		initStep(oldDataField, "Load Old File Tree", ()->initStep(newDataField, "Load New File Tree", null));
-	}
-	
-	private boolean initStep(SourceFieldRow sourceFieldRow, String title, Supplier<Boolean> interludeTask) {
-		return DiskUsage.OpenDialog.show(
-				mainWindow, title,
-				() -> sourceFieldRow.scanFolder    (interludeTask),
-				() -> sourceFieldRow.openStoredTree(interludeTask)
-		);
+		//initStep(oldDataField, "Load Old File Tree", ()->initStep(newDataField, "Load New File Tree", null));
+		new OpenDialog(mainWindow, "Initial File Selection", oldDataField,newDataField).showDialog();
 	}
 
 	@SuppressWarnings("unused")
@@ -169,6 +170,126 @@ public class DiskUsageCompare {
 		System.out.printf("%s:%n", title);
 		for (int i=0; i<pathObjs.length; i++)
 			System.out.printf("    [%d] %s%n", i, pathObjs[i]);
+	}
+	
+	private static class OpenDialog extends StandardDialog {
+		private static final long serialVersionUID = -8310078270387197037L;
+		
+		private final JButton btnOK;
+		private final SourceFieldPanel oldDataFieldPanel;
+		private final SourceFieldPanel newDataFieldPanel;
+
+		public OpenDialog(Window parent, String dlgTitle, SourceFieldRow oldDataField, SourceFieldRow newDataField) {
+			super(parent, dlgTitle);
+			
+			JPanel contentPane = new JPanel(new GridLayout(0,1));
+			contentPane.add(oldDataFieldPanel = new SourceFieldPanel("Old Data"));
+			contentPane.add(newDataFieldPanel = new SourceFieldPanel("New Data"));
+			
+			createGUI(contentPane,
+					btnOK = DiskUsage.createButton("Ok", e->{
+						SwingUtilities.invokeLater(()->{
+							doFileWork(oldDataField, newDataField);
+						});
+						closeDialog();
+					}),
+					DiskUsage.createButton("Cancel", e->{
+						closeDialog();
+					})
+			);
+			
+			updateGUI();
+		}
+		
+		private void doFileWork(SourceFieldRow oldDataField, SourceFieldRow newDataField) {
+			boolean success = true;
+			if (success) success = doFileWork(oldDataFieldPanel, oldDataField);
+			if (success) success = doFileWork(newDataFieldPanel, newDataField);
+		}
+
+		private boolean doFileWork(SourceFieldPanel fieldPanel, SourceFieldRow sourceFieldRow) {
+			ImportedFileData ifd = null;
+			
+			if (fieldPanel.folderForScan!=null)
+				ifd = DiskUsage.scanFolder(this, fieldPanel.folderForScan, fieldPanel.followSymbolicLinks, fieldPanel.excludeRootFolder, fieldPanel.targetName);
+			
+			else if (fieldPanel.storedTreeFile!=null)
+				ifd = DiskUsage.openStoredTree(this, fieldPanel.storedTreeFile, fieldPanel.targetName);
+			
+			if (ifd == null)
+				return false;
+			
+			sourceFieldRow.setIFD(ifd);
+			return true;
+		}
+
+		private void updateGUI() {
+			btnOK.setEnabled(
+					(oldDataFieldPanel.folderForScan!=null || oldDataFieldPanel.storedTreeFile!=null) &&
+					(newDataFieldPanel.folderForScan!=null || newDataFieldPanel.storedTreeFile!=null)
+			);
+		}
+
+		private class SourceFieldPanel extends JPanel {
+			private static final long serialVersionUID = -4340578435472718898L;
+
+			private final String targetName;
+			private final JCheckBox chkbxFSL;
+			private final JTextField outputField;
+			private final JCheckBox chkbxRF;
+			private boolean followSymbolicLinks;
+			private boolean excludeRootFolder;
+			private File folderForScan;
+			private File storedTreeFile;
+			
+			SourceFieldPanel(String targetName) {
+				super(new GridBagLayout());
+				this.targetName = targetName;
+				followSymbolicLinks = false;
+				excludeRootFolder = true;
+				folderForScan = null;
+				storedTreeFile = null;
+				
+				outputField = DiskUsage.createOutputTextField("");
+				
+				setBorder(BorderFactory.createTitledBorder(targetName));
+				GridBagConstraints c = new GridBagConstraints();
+				c.fill = GridBagConstraints.HORIZONTAL;
+				
+				
+				
+				c.gridwidth = 1;
+				c.weightx = 0;
+				c.weighty = 0;
+				
+				ButtonGroup bg = new ButtonGroup();
+				add(DiskUsage.createToggleButton(Icons16.OpenStoredTree, "Select StoredTree File", false, bg, e->{
+					File file = DiskUsage.selectStoredTreeFile(OpenDialog.this, String.format("Select Stored Tree File for %s", targetName));
+					if (file!=null) { storedTreeFile = file; folderForScan = null; outputField.setText(file.getAbsolutePath()); updateGUI(); }
+				}),c);
+				add(DiskUsage.createToggleButton(Icons16.Folder, "Select Folder to Scan", false, bg, e->{
+					File file = DiskUsage.selectFolder(OpenDialog.this, String.format("Select Folder for %s", targetName));
+					if (file!=null) { storedTreeFile = null; folderForScan = file; outputField.setText(file.getAbsolutePath()); updateGUI(); }
+				}),c);
+				
+				add(chkbxFSL = DiskUsage.createCheckBox("Follow Symbolic Links"                  , null, followSymbolicLinks, false, b->followSymbolicLinks = b),c);
+				add(chkbxRF  = DiskUsage.createCheckBox("Exclude root folder from resulting tree", null, excludeRootFolder  , false, b->excludeRootFolder   = b),c);
+				
+				c.gridwidth = GridBagConstraints.REMAINDER;
+				c.weightx = 1;
+				add(new JLabel(),c);
+				
+				c.weighty = 1;
+				c.fill = GridBagConstraints.BOTH;
+				add(outputField,c);
+			}
+
+			private void updateGUI() {
+				chkbxFSL.setEnabled(folderForScan!=null);
+				chkbxRF .setEnabled(folderForScan!=null);
+				OpenDialog.this.updateGUI();
+			}
+		}
 	}
 
 	static class AppSettings extends Settings.DefaultAppSettings<AppSettings.ValueGroup, AppSettings.ValueKey> {
@@ -569,24 +690,16 @@ public class DiskUsageCompare {
 			panel.add(btnSaveStoredTree,c);
 		}
 
-		boolean         scanFolder    (Supplier<Boolean> interludeTask) { return importData(DiskUsage::scanFolder    , String.format("Select Folder for %s"          , title), interludeTask); }
-		boolean         openStoredTree(Supplier<Boolean> interludeTask) { return importData(DiskUsage::openStoredTree, String.format("Select Stored Tree File for %s", title), interludeTask); }
-		private boolean scanFolder    () { return scanFolder    (null); }
-		private boolean openStoredTree() { return openStoredTree(null); }
-		private void    saveStoredTree() { DiskUsage.saveStoredTree(parent, String.format("Select Stored Tree File for %s", title), ifd.root()); }
+		private void scanFolder    () { setIFD( DiskUsage.scanFolder    (parent, String.format("Select Folder for %s"          , title), null, title) ); }
+		private void openStoredTree() { setIFD( DiskUsage.openStoredTree(parent, String.format("Select Stored Tree File for %s", title),       title) ); }
+		private void saveStoredTree() { DiskUsage.saveStoredTree(parent, String.format("Select Stored Tree File for %s", title), ifd.root()); }
 		
-		private interface ImportTask {
-			ImportedFileData importData(Window window, String fchTitle, Supplier<Boolean> interludeTask, String targetName);
-		}
-		
-		private boolean importData(ImportTask importFcn, String dlgTitle, Supplier<Boolean> interludeTask) {
-			ImportedFileData ifd = importFcn.importData(parent, dlgTitle, interludeTask, title);
-			if (ifd==null) return false;
+		private void setIFD(ImportedFileData ifd) {
+			if (ifd==null) return;
 			this.ifd = ifd;
 			setRoot.accept(this.ifd.root());
 			outputField.setText(this.ifd.source().getAbsolutePath());
 			btnSaveStoredTree.setEnabled(true);
-			return true;
 		}
 	}
 
