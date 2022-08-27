@@ -12,6 +12,7 @@ import java.awt.Window;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
+import java.net.URL;
 import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.Locale;
@@ -19,6 +20,9 @@ import java.util.Vector;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
+import javax.sound.sampled.AudioInputStream;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.Clip;
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
@@ -172,6 +176,19 @@ public class DiskUsageCompare {
 			System.out.printf("    [%d] %s%n", i, pathObjs[i]);
 	}
 	
+	private static void play(Class<?> baseClass, String res) {
+		try {
+			URL url = baseClass.getResource(res);
+			//System.out.printf("url: %s%n", url);
+			Clip clip = AudioSystem.getClip();
+			AudioInputStream inputStream = AudioSystem.getAudioInputStream(url);
+			clip.open(inputStream);
+			clip.start();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
 	private static class OpenDialog extends StandardDialog {
 		private static final long serialVersionUID = -8310078270387197037L;
 		
@@ -190,6 +207,7 @@ public class DiskUsageCompare {
 					btnOK = DiskUsage.createButton("Ok", e->{
 						SwingUtilities.invokeLater(()->{
 							doFileWork(oldDataField, newDataField);
+							play(getClass(), "/erledigt.wav");
 						});
 						closeDialog();
 					}),
