@@ -264,7 +264,7 @@ public class DiskUsageCompare {
 				super(new GridBagLayout());
 				this.targetName = targetName;
 				followSymbolicLinks = false;
-				excludeRootFolder = true;
+				excludeRootFolder = false;
 				folderForScan = null;
 				storedTreeFile = null;
 				
