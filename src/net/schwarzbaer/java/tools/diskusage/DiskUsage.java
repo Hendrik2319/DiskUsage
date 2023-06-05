@@ -596,7 +596,7 @@ public class DiskUsage implements FileMap.GuiContext {
 				if (value instanceof Color) {
 					oldColor = (Color) value;
 					newColor = oldColor;
-					colorDialog = new HSColorChooser.ColorDialog(DiskItemTypeDialog.this, "Select Color", newColor);
+					colorDialog = new HSColorChooser.ColorDialog(DiskItemTypeDialog.this, "Select Color", false, newColor);
 					SwingUtilities.invokeLater(()->{
 						editingCanceled = false;
 						colorDialog.showDialog();
