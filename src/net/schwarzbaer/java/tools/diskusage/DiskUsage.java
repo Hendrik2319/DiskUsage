@@ -66,18 +66,18 @@ import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 
-import net.schwarzbaer.gui.FileChooser;
-import net.schwarzbaer.gui.HSColorChooser;
-import net.schwarzbaer.gui.HSColorChooser.ColorDialog;
-import net.schwarzbaer.gui.IconSource;
-import net.schwarzbaer.gui.ProgressDialog;
-import net.schwarzbaer.gui.StandardDialog;
-import net.schwarzbaer.gui.StandardMainWindow;
-import net.schwarzbaer.gui.Tables;
-import net.schwarzbaer.image.bumpmapping.BumpMapping.Normal;
+import net.schwarzbaer.java.lib.gui.FileChooser;
+import net.schwarzbaer.java.lib.gui.HSColorChooser;
+import net.schwarzbaer.java.lib.gui.IconSource;
+import net.schwarzbaer.java.lib.gui.ProgressDialog;
+import net.schwarzbaer.java.lib.gui.StandardDialog;
+import net.schwarzbaer.java.lib.gui.StandardMainWindow;
+import net.schwarzbaer.java.lib.gui.Tables;
+import net.schwarzbaer.java.lib.gui.HSColorChooser.ColorDialog;
+import net.schwarzbaer.java.lib.image.bumpmapping.BumpMapping.Normal;
+import net.schwarzbaer.java.lib.system.ClipboardTools;
+import net.schwarzbaer.java.lib.system.DateTimeFormatter;
 import net.schwarzbaer.java.tools.diskusagecompare.DiskUsageCompare;
-import net.schwarzbaer.system.ClipboardTools;
-import net.schwarzbaer.system.DateTimeFormatter;
 
 public class DiskUsage implements FileMap.GuiContext {
 

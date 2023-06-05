@@ -46,16 +46,16 @@ import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 
-import net.schwarzbaer.gui.StandardDialog;
-import net.schwarzbaer.gui.StandardMainWindow;
-import net.schwarzbaer.gui.Tables;
-import net.schwarzbaer.gui.Tables.SimplifiedColumnConfig;
+import net.schwarzbaer.java.lib.gui.StandardDialog;
+import net.schwarzbaer.java.lib.gui.StandardMainWindow;
+import net.schwarzbaer.java.lib.gui.Tables;
+import net.schwarzbaer.java.lib.gui.Tables.SimplifiedColumnConfig;
+import net.schwarzbaer.java.lib.system.Settings;
 import net.schwarzbaer.java.tools.diskusage.DiskUsage;
 import net.schwarzbaer.java.tools.diskusage.DiskUsage.DiskItem;
 import net.schwarzbaer.java.tools.diskusage.DiskUsage.Icons16;
 import net.schwarzbaer.java.tools.diskusage.DiskUsage.ImportedFileData;
 import net.schwarzbaer.java.tools.diskusagecompare.DiskUsageCompare.AppSettings.ValueKey;
-import net.schwarzbaer.system.Settings;
 
 public class DiskUsageCompare {
 	

@@ -17,7 +17,7 @@ import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JMenuItem;
 import javax.swing.JPopupMenu;
 
-import net.schwarzbaer.gui.Canvas;
+import net.schwarzbaer.java.lib.gui.Canvas;
 import net.schwarzbaer.java.tools.diskusage.DiskUsage.DiskItem;
 
 public class FileMap extends Canvas {
