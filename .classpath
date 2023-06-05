@@ -8,7 +8,7 @@
 		</attributes>
 	</classpathentry>
 	<classpathentry combineaccessrules="false" kind="src" path="/CommonLib_Imaging"/>
-	<classpathentry combineaccessrules="false" kind="src" path="/CommonLib_gui_essentials"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/CommonLib_Essentials"/>
 	<classpathentry combineaccessrules="false" kind="src" path="/CommonLib_HSColorChooser"/>
 	<classpathentry combineaccessrules="false" kind="src" path="/CommonLib_Dialogs"/>
 	<classpathentry kind="output" path="bin"/>
