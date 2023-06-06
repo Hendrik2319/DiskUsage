@@ -7,9 +7,9 @@
 			<attribute name="module" value="true"/>
 		</attributes>
 	</classpathentry>
-	<classpathentry combineaccessrules="false" kind="src" path="/CommonLib_Imaging"/>
-	<classpathentry combineaccessrules="false" kind="src" path="/CommonLib_Essentials"/>
-	<classpathentry combineaccessrules="false" kind="src" path="/CommonLib_HSColorChooser"/>
-	<classpathentry combineaccessrules="false" kind="src" path="/CommonLib_Dialogs"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/JavaLib_Common_Imaging"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/JavaLib_Common_Essentials"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/JavaLib_Common_HSColorChooser"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/JavaLib_Common_Dialogs"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
