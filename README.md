@@ -2,7 +2,7 @@
 `DiskUsage` is a tool to show content of a folder structure in a more graphical manner.  
 It's inspired by a tool named [SequoiaView](https://sequoiaview.de.softonic.com/). And it's also the reason for my experimentation with bumpmapping, which resulted in the implementations included in [`JavaLib_Common_Imaging`](https://github.com/Hendrik2319/JavaLib_Common_Imaging).
 
-`DiskUsage` includes a subtool named [`DiskUsageCompare`](https://github.com/Hendrik2319/DiskUsage/blob/master/src/net/schwarzbaer/java/tools/diskusagecompare/DiskUsageCompare.java), which is used to compare 2 folders or more precisely to compare 2 states of the same folder. These states can be read from stored folder tree data or can be scanned from HDD.
+`DiskUsage` includes a subtool named [`DiskUsageCompare`](/src/net/schwarzbaer/java/tools/diskusagecompare/DiskUsageCompare.java), which is used to compare 2 folders or more precisely to compare 2 states of the same folder. These states can be read from stored folder tree data or can be scanned from HDD.
 
 ### Usage
 You can download a release [here](https://github.com/Hendrik2319/DiskUsage/releases).  
