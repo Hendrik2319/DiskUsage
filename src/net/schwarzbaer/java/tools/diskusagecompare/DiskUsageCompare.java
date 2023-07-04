@@ -36,6 +36,7 @@ import javax.swing.JSplitPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
 import javax.swing.JTree;
+import javax.swing.SortOrder;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.event.TreeSelectionEvent;
@@ -46,10 +47,12 @@ import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 
+import net.schwarzbaer.java.lib.gui.ContextMenu;
 import net.schwarzbaer.java.lib.gui.StandardDialog;
 import net.schwarzbaer.java.lib.gui.StandardMainWindow;
 import net.schwarzbaer.java.lib.gui.Tables;
 import net.schwarzbaer.java.lib.gui.Tables.SimplifiedColumnConfig;
+import net.schwarzbaer.java.lib.gui.Tables.SimplifiedRowSorter;
 import net.schwarzbaer.java.lib.system.Settings;
 import net.schwarzbaer.java.tools.diskusage.DiskUsage;
 import net.schwarzbaer.java.tools.diskusage.DiskUsage.DiskItem;
@@ -66,8 +69,9 @@ public class DiskUsageCompare {
 	private final SourceFieldRow newDataField;
 	private final CompareDiskItem root;
 	private final JTree tree;
-	private final FileTableModel fileTableModel;
 	private final JTable fileTable;
+	private final FileTableModel fileTableModel;
+	private final SimplifiedRowSorter fileTableRowSorter;
 	
 	public DiskUsageCompare() {
 		mainWindow = new StandardMainWindow("DiskUsageCompare");
@@ -82,6 +86,8 @@ public class DiskUsageCompare {
 		
 		fileTableModel = new FileTableModel();
 		fileTable = new JTable(fileTableModel);
+		fileTable.setRowSorter(fileTableRowSorter = new Tables.SimplifiedRowSorter(fileTableModel));
+
 		fileTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
 		fileTableModel.setTable(fileTable);
 		fileTableModel.setColumnWidths(fileTable);
@@ -90,7 +96,7 @@ public class DiskUsageCompare {
 		
 		fileTable.addMouseListener(new MouseAdapter() {
 			@Override public void mouseClicked(MouseEvent e) {
-				if (e.getButton()==MouseEvent.BUTTON1 && e.getClickCount()==2) {
+				if (e.getButton()==MouseEvent.BUTTON1 && e.getClickCount()>=2) {
 					
 					int rowV = fileTable.rowAtPoint(e.getPoint());
 					int rowM = rowV<0 ? -1 : fileTable.convertRowIndexToModel(rowV);
@@ -107,6 +113,7 @@ public class DiskUsageCompare {
 				}
 			}
 		});
+		createFileTableContextMenu(fileTablePanel,fileTable);
 		
 		JSplitPane mainPanel = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, true, treePanel, fileTablePanel);
 		
@@ -139,6 +146,22 @@ public class DiskUsageCompare {
 			if (newValue instanceof Integer)
 				settings.putInt(ValueKey.DividerLocation, (Integer) newValue);
 		});
+	}
+
+	private void createFileTableContextMenu(JScrollPane fileTablePanel, JTable fileTable)
+	{
+		ContextMenu contextMenu = new ContextMenu();
+		contextMenu.addTo(fileTable);
+		contextMenu.addTo(fileTablePanel);
+		
+		contextMenu.add(DiskUsage.createMenuItem("Reset Row Order", e->{
+			fileTableRowSorter.resetSortOrder();
+			fileTable.repaint();
+		}));
+		
+		//contextMenu.addContextMenuInvokeListener((comp, x, y) -> {
+		//
+		//});
 	}
 
 	private JMenuBar createMenuBar() {
@@ -724,16 +747,16 @@ public class DiskUsageCompare {
 	private static class FileTableModel extends Tables.SimplifiedTableModel<FileTableModel.ColumnID> {
 
 		enum ColumnID implements Tables.SimplifiedColumnIDInterface {
-			Name    ("Name"      ,          String.class, 500),
-			SizeOld ("Size (Old)",            Long.class,  80),
-			SizeNew ("Size (New)",            Long.class,  80),
-			SizeDiff("Difference",            Long.class,  80),
-			Change  ("Change"    , CompareDiskItem.class, 150),
+			Name    ("Name"      ,          String.class, 500, false),
+			SizeOld ("Size (Old)",            Long.class,  80, false),
+			SizeNew ("Size (New)",            Long.class,  80, false),
+			SizeDiff("Difference",            Long.class,  80, false),
+			Change  ("Change"    , CompareDiskItem.class, 150, true ),
 			;
 		
 			private final SimplifiedColumnConfig config;
-			ColumnID(String name, Class<?> columnClass, int width) {
-				config = new SimplifiedColumnConfig(name, columnClass, 20, -1, width, width);
+			ColumnID(String name, Class<?> columnClass, int width, boolean hasSpecialSorting) {
+				config = new SimplifiedColumnConfig(name, columnClass, 20, -1, width, width, hasSpecialSorting);
 			}
 			@Override public SimplifiedColumnConfig getColumnConfig() { return config; }
 			
@@ -747,7 +770,7 @@ public class DiskUsageCompare {
 			data = null;
 			maxSize = -1;
 		}
-
+		
 		private class CellRenderer implements TableCellRenderer {
 			
 			private final RendererComponent rendererComp;
@@ -845,6 +868,14 @@ public class DiskUsageCompare {
 			fireTableUpdate();
 		}
 
+		@Override
+		protected Comparator<Integer> getSpecialSorting(ColumnID columnID, SortOrder sortOrder)
+		{
+			if (columnID==ColumnID.Change)
+				return Comparator.<Integer,Long>comparing(rowIndex -> (Long)getValueAt(rowIndex, ColumnID.SizeDiff));
+			return super.getSpecialSorting(columnID, sortOrder);
+		}
+
 		@Override public int getRowCount() { return data==null ? 0 : data.size(); }
 
 		CompareDiskItem getRow(int rowIndex) {
@@ -853,7 +884,13 @@ public class DiskUsageCompare {
 		}
 
 		@Override
-		public Object getValueAt(int rowIndex, int columnIndex, ColumnID columnID) {
+		public Object getValueAt(int rowIndex, int columnIndex, ColumnID columnID)
+		{
+			return getValueAt(rowIndex, columnID);
+		}
+		
+		private Object getValueAt(int rowIndex, ColumnID columnID)
+		{
 			CompareDiskItem cdi = getRow(rowIndex);
 			if (cdi==null) return null;
 			
@@ -861,7 +898,7 @@ public class DiskUsageCompare {
 			case Name    : return cdi.name;
 			case SizeNew : return cdi.newData==null ? null : cdi.newData.size_kB;
 			case SizeOld : return cdi.oldData==null ? null : cdi.oldData.size_kB;
-			case SizeDiff: return (cdi.newData==null ? 0 : cdi.newData.size_kB) - (cdi.oldData==null ? 0 : cdi.oldData.size_kB);
+			case SizeDiff: return (cdi.newData==null ? 0L : cdi.newData.size_kB) - (cdi.oldData==null ? 0L : cdi.oldData.size_kB);
 			case Change  : return cdi;
 			}
 			return null;
