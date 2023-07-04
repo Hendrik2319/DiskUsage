@@ -1253,11 +1253,13 @@ public class DiskUsage implements FileMap.GuiContext {
 			return getSizeStr(size_kB);
 		}
 		public static String getSizeStr(long size_kB) {
-			if (size_kB<1024) return size_kB+" kB";
+			String sign = "";
+			if (size_kB<0) { sign = "-"; size_kB = -size_kB; }
+			if (size_kB<1024) return String.format("%s%d kB", sign, size_kB);
 			double sizeD;
-			sizeD = size_kB/1024.0; if (sizeD<1024) return String.format(Locale.ENGLISH, "%1.2f MB", sizeD);
-			sizeD = sizeD/1024;     if (sizeD<1024) return String.format(Locale.ENGLISH, "%1.2f GB", sizeD);
-			sizeD = sizeD/1024;                     return String.format(Locale.ENGLISH, "%1.2f TB", sizeD);
+			sizeD = size_kB/1024.0; if (sizeD<1024) return String.format(Locale.ENGLISH, "%s%1.2f MB", sign, sizeD);
+			sizeD = sizeD/1024;     if (sizeD<1024) return String.format(Locale.ENGLISH, "%s%1.2f GB", sign, sizeD);
+			sizeD = sizeD/1024;                     return String.format(Locale.ENGLISH, "%s%1.2f TB", sign, sizeD);
 		}
 		
 		public DiskItem get(String[] path) {

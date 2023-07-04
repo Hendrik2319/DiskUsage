@@ -727,6 +727,7 @@ public class DiskUsageCompare {
 			Name    ("Name"      ,          String.class, 500),
 			SizeOld ("Size (Old)",            Long.class,  80),
 			SizeNew ("Size (New)",            Long.class,  80),
+			SizeDiff("Difference",            Long.class,  80),
 			Change  ("Change"    , CompareDiskItem.class, 150),
 			;
 		
@@ -857,10 +858,11 @@ public class DiskUsageCompare {
 			if (cdi==null) return null;
 			
 			switch (columnID) {
-			case Name   : return cdi.name;
-			case SizeNew: return cdi.newData==null ? null : cdi.newData.size_kB;
-			case SizeOld: return cdi.oldData==null ? null : cdi.oldData.size_kB;
-			case Change : return cdi;
+			case Name    : return cdi.name;
+			case SizeNew : return cdi.newData==null ? null : cdi.newData.size_kB;
+			case SizeOld : return cdi.oldData==null ? null : cdi.oldData.size_kB;
+			case SizeDiff: return (cdi.newData==null ? 0 : cdi.newData.size_kB) - (cdi.oldData==null ? 0 : cdi.oldData.size_kB);
+			case Change  : return cdi;
 			}
 			return null;
 		}
