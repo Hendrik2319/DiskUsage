@@ -27,6 +27,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
@@ -81,6 +82,7 @@ import net.schwarzbaer.java.tools.diskusagecompare.DiskUsageCompare;
 
 public class DiskUsage implements FileMap.GuiContext {
 
+	private static final String PATH_CHAR = "/";
 	private static final String CONFIG_FILE = "DiskUsage.cfg";
 	
 	public enum Icons32 {
@@ -1031,23 +1033,7 @@ public class DiskUsage implements FileMap.GuiContext {
 			return null;
 		}
 		
-		SwingUtilities.invokeLater(()->{
-			pd.setTaskTitle("Parse Lines of Stored Tree File");
-			pd.setValue(0, lines.size());
-		});
-		
-		int i=0;
-		DiskItem newRoot = new DiskItem();
-		for (String line : lines) {
-			if (Thread.currentThread().isInterrupted()) { newRoot = null; break; }
-			int pos = line.indexOf(0x9);
-			long size_kB = Long.parseLong(line.substring(0,pos));
-			String[] path = line.substring(pos+1).split("/");
-			DiskItem item = newRoot.get(path);
-			item.size_kB = size_kB;
-			final int index = ++i;
-			SwingUtilities.invokeLater(() -> pd.setValue(index));
-		}
+		DiskItem newRoot = parseLines(pd, lines, true);
 		
 		if (newRoot!=null) {
 			SwingUtilities.invokeLater(()->{
@@ -1058,6 +1044,67 @@ public class DiskUsage implements FileMap.GuiContext {
 			DiskItemType.setTypes(newRoot);
 		}
 		return newRoot;
+	}
+
+	static DiskItem parseLines(ProgressDialog pd, List<String> lines, boolean withDiskItemCache)
+	{
+		SwingUtilities.invokeLater(()->{
+			pd.setTaskTitle("Parse Lines of Stored Tree File");
+			pd.setValue(0, lines.size());
+		});
+		
+		HashMap<String,DiskItem> cache = withDiskItemCache ? new HashMap<>() : null;
+		int i=0;
+		DiskItem newRoot = new DiskItem();
+		for (String line : lines) {
+			if (Thread.currentThread().isInterrupted()) { newRoot = null; break; }
+			int pos = line.indexOf(0x9);
+			long size_kB = Long.parseLong(line.substring(0,pos));
+			String pathStr = line.substring(pos+1);
+			DiskItem item = getDiskItem(newRoot, pathStr, cache);
+			item.size_kB = size_kB;
+			final int index = ++i;
+			SwingUtilities.invokeLater(() -> pd.setValue(index));
+		}
+		return newRoot;
+	}
+
+	private static DiskItem getDiskItem(DiskItem root, String pathStr, HashMap<String, DiskItem> cache)
+	{
+		if (cache==null)
+			return root.get(pathStr.split(PATH_CHAR));
+		
+		return getDiskItemFromCache(root, pathStr, cache);
+	}
+
+	private static DiskItem getDiskItemFromCache(DiskItem root, final String pathStr, HashMap<String, DiskItem> cache)
+	{
+		DiskItem item;
+		item = cache.get(pathStr);
+		
+		if (item == null)
+		{
+			String name;
+			DiskItem parent;
+			
+			int pos = pathStr.lastIndexOf(PATH_CHAR);
+			if (pos<0)
+			{
+				name = pathStr;
+				parent = root;
+			}
+			else
+			{
+				name = pathStr.substring(pos+1);
+				String parentPath = pathStr.substring(0, pos);
+				parent = getDiskItemFromCache(root, parentPath, cache);
+			}
+			
+			item = parent.createChild(name);
+			cache.put(pathStr, item);
+		}
+		
+		return item;
 	}
 
 	private void saveStoredTree() {
@@ -1080,7 +1127,7 @@ public class DiskUsage implements FileMap.GuiContext {
 				Vector<String> lines = new Vector<>();
 				boolean wasNotInterrupted = root.traverse(Thread.currentThread()::isInterrupted, true,(DiskItem di)->{
 					if (di==root) return;
-					lines.add(String.format("%d\t%s%n", di.size_kB, di.getPathStr("/")));
+					lines.add(String.format("%d\t%s%n", di.size_kB, di.getPathStr(PATH_CHAR)));
 				});
 				if (!wasNotInterrupted) { System.out.printf("Writing of StoredTree aborted.%n"); return; }
 				
@@ -1281,8 +1328,14 @@ public class DiskUsage implements FileMap.GuiContext {
 					break;
 				}
 			if (child == null)
-				children.add(child = new DiskItem(this,path[i]));
+				child = createChild(path[i]);
 			return child.getChild(path, i+1);
+		}
+		
+		private DiskItem createChild(String name) {
+			DiskItem child = new DiskItem(this,name);
+			children.add(child);
+			return child;
 		}
 		
 		private boolean isSymbolicLink(File file) {
@@ -1295,10 +1348,9 @@ public class DiskUsage implements FileMap.GuiContext {
 			return Files.isSymbolicLink(path);
 		}
 		public DiskItem addChild(File file, boolean followSymbolicLinks) {
-			DiskItem child = new DiskItem(this,file.getName());
+			DiskItem child = createChild(file.getName());
 			boolean isSymbolicLink = !followSymbolicLinks && isSymbolicLink(file);
 			child.size_kB = isSymbolicLink ? 0 : (long) Math.ceil(file.length()/1024.0);
-			children.add(child);
 			return child;
 		}
 		public void addChildren(ProgressDialog pd, double pdMin, double pdMax, File folder, boolean followSymbolicLinks) throws ProgressAbortedException {
