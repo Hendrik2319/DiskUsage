@@ -109,7 +109,7 @@ public class DiskUsage implements FileMap.GuiContext {
 		icons16source.readIconsFromResource("/icons16.png");
 		icons16 = icons16source.cacheIcons(Icons16.values());
 		
-		storedTreeChooser = new FileChooser("Stored Tree", "diskusage");
+		storedTreeChooser = StoredTreeIO.createFileChooser();
 		folderChooser = new JFileChooser("./");
 		folderChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
 		folderChooser.setMultiSelectionEnabled(false);
@@ -933,6 +933,7 @@ public class DiskUsage implements FileMap.GuiContext {
 	}
 
 	public static File selectStoredTreeFile(Window window, String fchTitle) {
+		storedTreeChooser.setDialogTitle("Select Stored Tree File");
 		return selectFile(window, fchTitle, storedTreeChooser);
 	}
 
@@ -949,7 +950,7 @@ public class DiskUsage implements FileMap.GuiContext {
 		DiskItem newRoot = ProgressDialog.runWithProgressDialogRV(window, dlgTitle, 500, pd->{
 			long startTime = System.currentTimeMillis();
 			
-			DiskItem root = DiskUsage.scanFolder_core(pd, selectedFolder, followSymbolicLinks, excludeRootFolder);
+			DiskItem root = scanFolder_core(pd, selectedFolder, followSymbolicLinks, excludeRootFolder);
 			
 			String durationStr_ms = DateTimeFormatter.getDurationStr_ms(System.currentTimeMillis()-startTime);
 			if (targetName!=null)
@@ -971,7 +972,7 @@ public class DiskUsage implements FileMap.GuiContext {
 		DiskItem newRoot = ProgressDialog.runWithProgressDialogRV(window, dlgTitle, 300, pd->{
 			long startTime = System.currentTimeMillis();
 			
-			DiskItem root = DiskUsage.openStoredTree_core(pd, selectedFile);
+			DiskItem root = openStoredTree_core(pd, selectedFile);
 			
 			String durationStr_ms = DateTimeFormatter.getDurationStr_ms(System.currentTimeMillis()-startTime);
 			if (targetName!=null)
@@ -1016,17 +1017,17 @@ public class DiskUsage implements FileMap.GuiContext {
 		return newRoot;
 	}
 
-	private static DiskItem openStoredTree_core(ProgressDialog pd, File selectedFile) {
+	private static DiskItem openStoredTree_core(ProgressDialog pd, File file) {
 		SwingUtilities.invokeLater(()->{
 			pd.setTaskTitle("Read Stored Tree File");
 			pd.setIndeterminate(true);
 		});
 		
-		List<String> lines;
-		try {
-			lines = Files.readAllLines(selectedFile.toPath(), StandardCharsets.UTF_8);
-		} catch (IOException e) {
-			e.printStackTrace();
+		List<String> lines = StoredTreeIO.readFile(file, ()->Thread.currentThread().isInterrupted());
+		if (lines==null)
+		{
+			if (!Thread.currentThread().isInterrupted())
+				System.err.printf("Can't read file \"%s\".%n", file.getAbsolutePath());
 			return null;
 		}
 		
@@ -1067,28 +1068,32 @@ public class DiskUsage implements FileMap.GuiContext {
 		if (root == null) return;
 		storedTreeChooser.setDialogTitle(title);
 		if (storedTreeChooser.showSaveDialog(window)==FileChooser.APPROVE_OPTION)
-			ProgressDialog.runWithProgressDialog(window, "Write Stored Tree", 300, pd->{
+			ProgressDialog.runWithProgressDialog(window, "Write tree to file", 300, pd->{
 				long startTime = System.currentTimeMillis();
 				File selectedFile = storedTreeChooser.getSelectedFile();
 				
 				SwingUtilities.invokeLater(()->{
-					pd.setTaskTitle("Write Stored Tree");
+					pd.setTaskTitle("Traverse tree");
 					pd.setIndeterminate(true);
 				});
 				
-				try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(selectedFile), StandardCharsets.UTF_8))) {
-					boolean wasNotInterrupted = root.traverse(Thread.currentThread()::isInterrupted, true,(DiskItem di)->{
-						if (di==root) return;
-						out.printf("%d\t%s%n", di.size_kB, di.getPathStr("/"));
-					});
-					if (!wasNotInterrupted)
-						out.printf("output aborted%n");
-				} catch (FileNotFoundException e) {
-					e.printStackTrace();
-				}
+				Vector<String> lines = new Vector<>();
+				boolean wasNotInterrupted = root.traverse(Thread.currentThread()::isInterrupted, true,(DiskItem di)->{
+					if (di==root) return;
+					lines.add(String.format("%d\t%s%n", di.size_kB, di.getPathStr("/")));
+				});
+				if (!wasNotInterrupted) { System.out.printf("Writing of StoredTree aborted.%n"); return; }
+				
+				SwingUtilities.invokeLater(()->{
+					pd.setTaskTitle("Write lines to file");
+					pd.setIndeterminate(true);
+				});
+				
+				StoredTreeIO.writeFile(selectedFile, lines, Thread.currentThread()::isInterrupted);
+				if (Thread.currentThread().isInterrupted()) { System.out.printf("Writing of StoredTree aborted.%n"); return; }
 				
 				String durationStr_ms = DateTimeFormatter.getDurationStr_ms(System.currentTimeMillis()-startTime);
-				System.out.printf("StoredTree written%n   into file \"%s\"%n   in %s.%n", selectedFile, durationStr_ms);
+				System.out.printf("Tree written%n   into file \"%s\"%n   in %s.%n", selectedFile, durationStr_ms);
 			});
 	}
 	
