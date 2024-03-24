@@ -1057,6 +1057,7 @@ public class DiskUsage implements FileMap.GuiContext {
 		int i=0;
 		DiskItem newRoot = new DiskItem();
 		for (String line : lines) {
+			if (line.isBlank()) continue;
 			if (Thread.currentThread().isInterrupted()) { newRoot = null; break; }
 			int pos = line.indexOf(0x9);
 			long size_kB = Long.parseLong(line.substring(0,pos));
@@ -1127,7 +1128,7 @@ public class DiskUsage implements FileMap.GuiContext {
 				Vector<String> lines = new Vector<>();
 				boolean wasNotInterrupted = root.traverse(Thread.currentThread()::isInterrupted, true,(DiskItem di)->{
 					if (di==root) return;
-					lines.add(String.format("%d\t%s%n", di.size_kB, di.getPathStr(PATH_CHAR)));
+					lines.add(String.format("%d\t%s", di.size_kB, di.getPathStr(PATH_CHAR)));
 				});
 				if (!wasNotInterrupted) { System.out.printf("Writing of StoredTree aborted.%n"); return; }
 				
