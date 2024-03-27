@@ -282,6 +282,7 @@ public class DiskUsageCompare {
 			private boolean excludeRootFolder;
 			private File folderForScan;
 			private File storedTreeFile;
+			private File storedTreeFileOfScannedFolder;
 			
 			SourceFieldPanel(String targetName) {
 				super(new GridBagLayout());
@@ -290,6 +291,7 @@ public class DiskUsageCompare {
 				excludeRootFolder = false;
 				folderForScan = null;
 				storedTreeFile = null;
+				storedTreeFileOfScannedFolder = null;
 				
 				outputField = DiskUsage.createOutputTextField("");
 				
@@ -305,12 +307,22 @@ public class DiskUsageCompare {
 				
 				ButtonGroup bg = new ButtonGroup();
 				add(DiskUsage.createToggleButton(Icons16.OpenStoredTree, "Select StoredTree File", false, bg, e->{
-					File file = DiskUsage.selectStoredTreeFile(OpenDialog.this, String.format("Select Stored Tree File for %s", targetName));
-					if (file!=null) { storedTreeFile = file; folderForScan = null; outputField.setText(file.getAbsolutePath()); updateGUI(); }
+					File file = DiskUsage.selectStoredTreeFileToOpen(OpenDialog.this, String.format("Select Stored Tree File for %s", targetName));
+					if (file!=null) {
+						storedTreeFile = file;
+						folderForScan = null;
+						outputField.setText(file.getAbsolutePath());
+						updateGUI();
+					}
 				}),c);
 				add(DiskUsage.createToggleButton(Icons16.Folder, "Select Folder to Scan", false, bg, e->{
 					File file = DiskUsage.selectFolder(OpenDialog.this, String.format("Select Folder for %s", targetName));
-					if (file!=null) { storedTreeFile = null; folderForScan = file; outputField.setText(file.getAbsolutePath()); updateGUI(); }
+					if (file!=null) {
+						storedTreeFile = null;
+						folderForScan = file;
+						outputField.setText(file.getAbsolutePath());
+						updateGUI();
+					}
 				}),c);
 				
 				add(chkbxFSL = DiskUsage.createCheckBox("Follow Symbolic Links"                  , null, followSymbolicLinks, false, b->followSymbolicLinks = b),c);
