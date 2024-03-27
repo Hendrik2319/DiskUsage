@@ -30,6 +30,7 @@ import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
@@ -260,6 +261,9 @@ public class DiskUsageCompare {
 			if (ifd == null)
 				return false;
 			
+			if (fieldPanel.storedTreeFileOfScannedFolder!=null)
+				DiskUsage.saveStoredTree(this, ifd.root(), fieldPanel.storedTreeFileOfScannedFolder);
+			
 			sourceFieldRow.setIFD(ifd);
 			return true;
 		}
@@ -316,11 +320,17 @@ public class DiskUsageCompare {
 					}
 				}),c);
 				add(DiskUsage.createToggleButton(Icons16.Folder, "Select Folder to Scan", false, bg, e->{
-					File file = DiskUsage.selectFolder(OpenDialog.this, String.format("Select Folder for %s", targetName));
-					if (file!=null) {
+					File folder = DiskUsage.selectFolder(OpenDialog.this, String.format("Select Folder for %s", targetName));
+					if (folder!=null) {
 						storedTreeFile = null;
-						folderForScan = file;
-						outputField.setText(file.getAbsolutePath());
+						folderForScan = folder;
+						if (askUserForDirectSave())
+							storedTreeFileOfScannedFolder =
+								DiskUsage.selectStoredTreeFileToSave(OpenDialog.this, String.format("Select Stored Tree File to save %s", targetName));
+						String output = folder.getAbsolutePath();
+						if (storedTreeFileOfScannedFolder!=null)
+							output += "    ->    "+storedTreeFileOfScannedFolder.getAbsolutePath();
+						outputField.setText(output);
 						updateGUI();
 					}
 				}),c);
@@ -335,6 +345,14 @@ public class DiskUsageCompare {
 				c.weighty = 1;
 				c.fill = GridBagConstraints.BOTH;
 				add(outputField,c);
+			}
+
+			private boolean askUserForDirectSave()
+			{
+				String msg = "Would you like to save the data from the scanned folder to a file immediately after scanning?";
+				String title = "Write into file after scanning";
+				int result = JOptionPane.showConfirmDialog(OpenDialog.this, msg, title, JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+				return result == JOptionPane.YES_OPTION;
 			}
 
 			private void updateGUI() {
