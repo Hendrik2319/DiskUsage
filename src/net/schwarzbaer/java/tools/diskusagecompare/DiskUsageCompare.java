@@ -315,6 +315,7 @@ public class DiskUsageCompare {
 					if (file!=null) {
 						storedTreeFile = file;
 						folderForScan = null;
+						storedTreeFileOfScannedFolder = null;
 						outputField.setText(file.getAbsolutePath());
 						updateGUI();
 					}
@@ -324,9 +325,10 @@ public class DiskUsageCompare {
 					if (folder!=null) {
 						storedTreeFile = null;
 						folderForScan = folder;
-						if (askUserForDirectSave())
-							storedTreeFileOfScannedFolder =
-								DiskUsage.selectStoredTreeFileToSave(OpenDialog.this, String.format("Select Stored Tree File to save %s", targetName));
+						storedTreeFileOfScannedFolder =
+							askUserForDirectSave()
+								? DiskUsage.selectStoredTreeFileToSave(OpenDialog.this, String.format("Select Stored Tree File to save %s", targetName))
+								: null;
 						String output = folder.getAbsolutePath();
 						if (storedTreeFileOfScannedFolder!=null)
 							output += "    ->    "+storedTreeFileOfScannedFolder.getAbsolutePath();
