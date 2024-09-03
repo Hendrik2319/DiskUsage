@@ -103,11 +103,11 @@ public class DiskUsage implements FileMap.GuiContext {
 		try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
 		catch (ClassNotFoundException | InstantiationException | IllegalAccessException | UnsupportedLookAndFeelException e) {}
 		
-		IconSource<Icons32> icons32source = new IconSource<Icons32>(32,32);
+		IconSource<Icons32> icons32source = new IconSource<>(32,32);
 		icons32source.readIconsFromResource("/icons32.png");
 		icons32 = icons32source.cacheIcons(Icons32.values());
 		
-		IconSource<Icons16> icons16source = new IconSource<Icons16>(16,16);
+		IconSource<Icons16> icons16source = new IconSource<>(16,16);
 		icons16source.readIconsFromResource("/icons16.png");
 		icons16 = icons16source.cacheIcons(Icons16.values());
 		
@@ -1205,7 +1205,7 @@ public class DiskUsage implements FileMap.GuiContext {
 
 		@Override public Enumeration<DiskItemTreeNode> children() {
 			if (children==null) createChildren();
-			return new Enumeration<DiskItemTreeNode>() {
+			return new Enumeration<>() {
 				int index = 0;
 				@Override public boolean hasMoreElements() { return index < children.length; }
 				@Override public DiskItemTreeNode nextElement() { return children[index++]; }
