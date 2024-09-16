@@ -797,7 +797,7 @@ public class DiskUsage implements FileMap.GuiContext {
 							type = new DiskItemType("", Color.GRAY);
 							DiskItemType.types.add(type);
 						}
-						if (currentConfigBlock == ConfigBlock.DiskItemType) {
+						if (currentConfigBlock == ConfigBlock.DiskItemType && type != null) {
 							if (str.startsWith(VALUE_DISKITEMTYPE_LABEL         +"=")) type.label          =                          str.substring(VALUE_DISKITEMTYPE_LABEL         .length()+1)  ;
 							if (str.startsWith(VALUE_DISKITEMTYPE_COLOR         +"=")) type.color          = parseColor             ( str.substring(VALUE_DISKITEMTYPE_COLOR         .length()+1) );
 							if (str.startsWith(VALUE_DISKITEMTYPE_FILEEXTENSIONS+"=")) type.fileExtensions = DiskItemType.toStrArray( str.substring(VALUE_DISKITEMTYPE_FILEEXTENSIONS.length()+1) );
